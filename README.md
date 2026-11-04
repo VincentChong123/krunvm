@@ -1,15 +1,16 @@
-# krunvm MicroVM Sandbox & Subagent Orchestration
+# krunvm MicroVM Sandbox & In-VM Bubblewrap Orchestration
 
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20%7C%2026.04-E95420?logo=ubuntu&logoColor=white)](https://releases.ubuntu.com/)
 [![libkrun](https://img.shields.io/badge/libkrun-MicroVM-blue?logo=rust&logoColor=white)](https://github.com/libkrun/libkrun)
 [![Packaging](https://img.shields.io/badge/Packaging-uv-DE5FE9?logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
+[![Antigravity](https://img.shields.io/badge/Antigravity-CLI%201.4.12-4285F4?logo=google&logoColor=white)](https://antigravity.google/)
 [![Telemetry](https://img.shields.io/badge/Telemetry-Langfuse%20%7C%20OTEL-orange)](https://langfuse.com/)
 
-A high-performance, hardened **microVM orchestration framework** designed for autonomous AI coding agents on Ubuntu workstations (optimized for 16 GB RAM / 8-core hardware). 
+A high-performance, hardened **microVM orchestration framework** designed for autonomous AI coding agents on Ubuntu workstations (optimized for 16 GB RAM / 8-core hardware).
 
-Powered by [`libkrun`](https://github.com/libkrun/libkrun) and [`krunvm`](https://github.com/libkrun/krunvm), this repository delivers a **Two-Tier Hybrid Architecture**:
-1. **Persistent Sandbox (YOLO Mode):** A long-lived, stateful microVM environment for interactive development, virtualenv caching, and primary agent operations.
-2. **Ephemeral MicroVM Subagents (Instantaneous Cattle):** Sub-100ms disposable microVMs spawned on-demand for isolated, untrusted tasks—automatically dismantled upon completion with zero host pollution.
+Powered by [`libkrun`](https://github.com/libkrun/libkrun) and [`krunvm`](https://github.com/libkrun/krunvm), this repository delivers a **Hardened Two-Tier Isolation Architecture**:
+1. **Outer Hypervisor Perimeter:** A single persistent, stateful microVM (`krun-agent-persistent`) providing a hardware-isolated KVM hypervisor boundary around the entire agent runtime.
+2. **Inner Process Perimeter:** Zero-overhead subagent isolation via Antigravity CLI's native **Bubblewrap (`bwrap`)** unprivileged user namespaces (<5ms cold start, 0 MB memory overhead).
 
 ---
 
@@ -18,43 +19,42 @@ Powered by [`libkrun`](https://github.com/libkrun/libkrun) and [`krunvm`](https:
 ```mermaid
 flowchart TD
     subgraph Host["Host Machine (Ubuntu 26.04 - 16GB RAM)"]
-        H_Proj["Target Project Workspace\n(Source Code, git, lockfiles)"]
+        H_Proj["Target Project Workspace\n(/doc-micro-access-ctr, /local-infra, etc.)"]
         H_LF["Host Langfuse / OTEL Collector\n(Ports 3100, 4318 on 127.0.0.1)"]
-        H_Scratch["Host Scratch Space\n(/scratch/subagent-*)"]
+        H_Notes["Host Documentation & Notes\n(/31_obsidian, /krunvm - READ ONLY)"]
     end
 
-    subgraph PersistentVM["Persistent Sandbox (krun-agent-persistent)"]
-        P_Init["Base Image (Ubuntu 24.04, Python 3.12, uv)"]
-        P_Mount["VirtioFS Mount: /mnt/workspace"]
-        P_Agent["Primary Autonomous Agent (YOLO Mode)"]
-        P_Launcher["Subagent Launcher\n(launch_subagent_microvm.sh)"]
+    subgraph PersistentVM["Outer Perimeter: Persistent MicroVM (krun-agent-persistent)"]
+        P_Hyper["Hardware KVM Hypervisor Boundary (libkrun)"]
+        P_Mounts["VirtioFS Mounts: /doc-micro-access-ctr (rw), /krunvm (ro)"]
+        P_Agent["Primary Autonomous Agent (agy-cli / YOLO Mode)"]
+        
+        subgraph InnerSandbox["Inner Perimeter: Bubblewrap (bwrap) Subagents (<5ms latency)"]
+            B_Sub1["Subagent A (Unprivileged user namespace, restricted mounts)"]
+            B_Sub2["Subagent B (Isolated /tmp, read-only system)"]
+        end
     end
 
-    subgraph EphemeralVM["Disposable Subagent MicroVMs (<100ms Cold Start)"]
-        E_Sub["Untrusted Subagent Task\n(Per-command disposable rootfs)"]
-        E_Mount["Disposable Mount: /scratch"]
-    end
-
-    H_Proj -- "VirtioFS Host Mount" --> P_Mount
-    P_Agent -- "Triggers risky / untrusted task" --> P_Launcher
-    P_Launcher -- "krunvm create --rm" --> EphemeralVM
-    H_Scratch -- "Ephemeral mount" --> E_Mount
+    H_Proj -- "VirtioFS (rw)" --> P_Mounts
+    H_Notes -- "VirtioFS (ro enforced)" --> P_Mounts
+    P_Mounts --> P_Agent
+    P_Agent -- "Launches untrusted subagent" --> InnerSandbox
     P_Agent -- "TSI over AF_VSOCK (127.0.0.1:4318)" --> H_LF
-    E_Sub -- "TSI over AF_VSOCK (127.0.0.1:4318)" --> H_LF
+    InnerSandbox -- "Inherits TSI networking" --> H_LF
 ```
 
 ---
 
-## Why krunvm for Agentic Workloads?
+## Why krunvm + Bubblewrap for Agentic Workloads?
 
-| Dimension | Canonical Multipass | Standard Docker / Podman | krunvm Two-Tier (This Repo) |
+| Dimension | Canonical Multipass | Nested MicroVMs | krunvm + In-VM Bubblewrap (This Repo) |
 | :--- | :--- | :--- | :--- |
-| **Boot Latency** | 15–30 seconds | ~1 second | **< 100 milliseconds** |
-| **Memory Allocation** | Static reservation (e.g. 2GB pinned) | Shared host memory | **Dynamic in-process (yields back to host)** |
-| **Idle Overhead** | ~350–600 MB (systemd, snapd) | ~50 MB (daemon overhead) | **~30–50 MB (no background daemon)** |
-| **Isolation Boundary** | KVM / Full hypervisor | Shared Linux kernel | **Hardware KVM hypervisor boundary** |
-| **Subagent Spawning** | Slow VM cloning | Container escapes risk host | **Instantaneous disposable microVMs** |
-| **Networking** | Bridged / NAT subnet | Virtual bridge (docker0) | **Transparent Socket Impersonation (TSI)** |
+| **Boot Latency** | 15–30 seconds | ~100 ms per subagent | **< 100 ms** (Outer VM) / **< 5 ms** (`bwrap` subagent) |
+| **Memory Allocation** | Static reservation (e.g. 2GB pinned) | Multiplied per VM instance | **Dynamic in-process (yields back to host)** |
+| **Idle RAM Overhead** | ~350–600 MB (systemd, snapd) | ~50 MB per nested VM | **~30–50 MB total** (0 MB for bwrap subagents) |
+| **Outer Boundary** | KVM / Full hypervisor | KVM | **Hardware KVM hypervisor boundary** |
+| **Subagent Sandboxing** | Slow VM cloning | Nested hypervisor overhead | **Native unprivileged user namespaces (`bwrap`)** |
+| **Networking** | Bridged / NAT subnet | Complex nested bridges | **Transparent Socket Impersonation (TSI)** |
 
 ---
 
@@ -65,7 +65,7 @@ flowchart TD
 │   ├── hooks.json                     # Antigravity CLI post-tool telemetry hooks
 │   └── plans/                         # Execution logs & decision manifests
 ├── configs/
-│   └── Containerfile                  # OCI base image definition (Ubuntu + uv + OTEL)
+│   └── Containerfile                  # OCI base image (Ubuntu + uv + agy + bwrap + podman)
 ├── docs/
 │   ├── multipass-vs-krunvm-bwrap-comparison.md # Technical trade-off matrix & bwrap architecture
 │   └── plans/
@@ -77,10 +77,14 @@ flowchart TD
 │   ├── export_agy_otel.sh             # Antigravity CLI OpenTelemetry exporter hook
 │   ├── export_agy_otel_to_langfuse.py # OTLP HTTP trace exporter
 │   ├── get_active_agy_session.sh      # Active Antigravity session discovery helper
-│   ├── launch_subagent_microvm.sh     # Sub-100ms disposable subagent launcher
 │   ├── test_connectivity.sh           # In-microVM network & Langfuse connectivity test
+│   ├── test_containers.sh             # Nested Docker / Podman container validation
+│   ├── test_env_verification.sh       # Full verification suite (symlinks, ro-mounts, telemetry)
 │   └── test_smoke.sh                  # End-to-end telemetry pipeline validation
+├── .env.host                          # SSOT host control plane configuration (git ignored)
+├── .env                               # Active host environment configuration (git ignored)
 ├── .env.example                       # Canonical orchestrator configuration template
+├── .env.sandbox                       # Guest agent secrets template (git ignored)
 ├── .env.sandbox.example               # Guest agent secrets template
 ├── .gitignore                         # Strict exclusion for secrets, venvs, and build artifacts
 ├── pyproject.toml                     # Python dev dependencies & linter standards
@@ -125,7 +129,7 @@ Build the hardened agent sandbox base image via Buildah:
 ### 4. Configure & Provision the Environment
 Copy the environment template and run the setup engine:
 ```bash
-cp .env.example .env
+cp .env.example .env.host
 cp .env.sandbox.example .env.sandbox
 
 ./setup.sh
@@ -141,14 +145,14 @@ Attach an interactive bash session into your primary development sandbox:
 ./run_sandbox.sh
 ```
 
-### Launch an Ephemeral MicroVM Subagent
-Execute a discrete, untrusted task in a disposable microVM (<100ms cold start):
+### Subagent Sandboxing via Antigravity Bubblewrap
+Inside the microVM, `agy` can run subagents under unprivileged user namespaces:
 ```bash
-# Execute a one-shot Python task inside an isolated microVM:
-./scripts/launch_subagent_microvm.sh /path/to/scratch python3 -c "print('Hello from disposable microVM')"
+# Launch Antigravity CLI with native Bubblewrap sandbox active:
+agy --sandbox
 
-# Open an interactive disposable subagent shell:
-./scripts/launch_subagent_microvm.sh
+# Direct Bubblewrap one-shot execution:
+bwrap --ro-bind / / --dev /dev --proc /proc --bind /doc-micro-access-ctr /doc-micro-access-ctr python3 untrusted_task.py
 ```
 
 ### Test Telemetry & Langfuse Connectivity
@@ -162,6 +166,6 @@ Verify that in-microVM requests route over TSI to host Langfuse (`:3100`) and Op
 ## Security & Blast Radius Controls
 
 1. **Hardware Virtualization:** MicroVM processes run under Linux KVM with a dedicated minimal kernel (`libkrunfw`), eliminating container-breakout risks to the host kernel.
-2. **Mount Guardrails:** `setup.sh` strictly forbids mounting host root (`/`), `/home`, or `$HOME`. Only explicit project subfolders are shared.
-3. **Decoupled Secrets:** Master host credentials remain on the host; only scoped agent tokens defined in `.env.sandbox` are exposed to the guest.
-4. **Disposable Subagent State:** Ephemeral subagents operate on isolated scratch mounts, ensuring rogue dependencies or test debris evaporate upon task exit.
+2. **Mount Guardrails & Read-Only Protection:** `setup.sh` strictly forbids mounting host root (`/`), `/home`, or `$HOME`. Sensitive repositories (`/krunvm`, notes) are enforced as **Read-Only (`:ro`)** via Linux kernel bind-remounts, preventing the agent from modifying its own harness.
+3. **Decoupled Secrets:** Master host credentials remain on the host; only scoped agent tokens defined in `.env.sandbox` are injected into `/home/ubuntu/.gemini/antigravity-cli/.env`.
+4. **Zero-Overhead In-VM Subagents:** Subagents spawned by `agy` operate within `bwrap` unprivileged user namespaces, preventing rogue subagents from corrupting the primary agent's files or processes.
