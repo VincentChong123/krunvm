@@ -58,6 +58,38 @@ flowchart TD
 
 ---
 
+## Key Architectural Updates & Specifications
+
+1. **Single Parent MicroVM Architecture:**
+   * Only one persistent microVM (`krun-agent-persistent`) is provisioned and managed by `krunvm`.
+   * Nested or ephemeral microVM subagents are explicitly disabled to eliminate nested KVM virtualization tax, guest rootfs duplication, and `flock` VM contention.
+
+2. **In-VM Bubblewrap (`bwrap`) Subagent Isolation:**
+   * Autonomous subagents launched by `agy-cli` execute inside native unprivileged Linux user namespaces via `bwrap`.
+   * **Latency:** < 5 ms spawn time.
+   * **Memory:** 0 MB baseline overhead (shares guest kernel page cache).
+   * **Isolation:** Unprivileged user namespace (`CLONE_NEWUSER`), isolated `/tmp`, restricted device access, and selective `--ro-bind` / `--bind` mounts.
+
+3. **Hierarchical Decoupled Environment (Multipass Parity):**
+   * **`.env.host` / `.env`:** Host control plane SSOT (VM sizing, ports, host volume definitions). Ignored by git to avoid path and secret leakage.
+   * **`.env.example`:** Tracked sanitized host template.
+   * **`.env.sandbox`:** Decoupled guest-only secrets (Langfuse keys, OTLP endpoint) injected into `/home/ubuntu/.gemini/antigravity-cli/.env`. Ignored by git.
+   * **`.env.sandbox.example`:** Tracked sanitized guest template.
+
+4. **Single-Depth Path Normalization & Symlinks:**
+   * `krunvm` strictly requires guest mount paths to be single-depth root children (e.g. `/doc-micro-access-ctr`).
+   * `setup.sh` automatically normalizes `/home/ubuntu/<name>` paths to direct root mounts on the hypervisor, while generating `/home/ubuntu/<name>` compatibility symlinks inside the guest.
+
+5. **Read-Only (`:ro`) Volume Protection:**
+   * To prevent an autonomous agent in YOLO mode from mutating its own orchestrator or notes, sensitive volumes (`/krunvm:ro`, `/31_obsidian:ro`) are enforced via Linux kernel bind-remounts:
+     ```bash
+     mount --bind /krunvm /krunvm
+     mount -o remount,ro,bind /krunvm
+     ```
+   * Enforced automatically via `/usr/local/bin/enforce-mounts.sh` hooked into bash startup.
+
+---
+
 ## Repository Structure
 
 ```text
