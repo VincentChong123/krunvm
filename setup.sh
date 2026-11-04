@@ -61,7 +61,7 @@ if [[ ${#MISSING_CONFIG_VARS[@]} -gt 0 ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 3. Volume Parsing & Security Golden Rule
+# 3. Volume Parsing & krunvm Constraint Validation
 # ------------------------------------------------------------------------------
 PARSED_MOUNTS=()
 while IFS= read -r line || [[ -n "$line" ]]; do
@@ -76,10 +76,18 @@ while IFS= read -r line || [[ -n "$line" ]]; do
             h_dir="${BASH_REMATCH[1]}"
             v_dir="${BASH_REMATCH[2]}"
             m_mode="${BASH_REMATCH[4]:-rw}"
+
+            # krunvm constraint: guest_path must be a single direct root child (e.g. /workspace)
+            trimmed_v="${v_dir#/}"
+            if [[ "$trimmed_v" == *"/"* || -z "$trimmed_v" ]]; then
+                echo "[ERROR] Invalid volume mapping '$token':" >&2
+                echo "        krunvm requires guest_path to be a direct root child (e.g. /workspace, /scratch)." >&2
+                exit 1
+            fi
             PARSED_MOUNTS+=("${h_dir}:${v_dir}:${m_mode}")
         else
             echo "[ERROR] Invalid volume mapping in VOLUMES: '$token'" >&2
-            echo "        Expected syntax: /path/on/host:/path/in/vm[:ro|:rw]" >&2
+            echo "        Expected syntax: /path/on/host:/path_in_vm[:ro|:rw]" >&2
             exit 1
         fi
     done
@@ -143,7 +151,7 @@ fi
 echo "==> Checking current status of persistent sandbox '$VM_NAME'..."
 VM_LIST="$("$KRUNVM_BIN" list 2>/dev/null || true)"
 
-if echo "$VM_LIST" | grep -q "^${VM_NAME}[[:space:]]"; then
+if echo "$VM_LIST" | grep -q "^${VM_NAME}[[:space:]]*$"; then
     echo "==> Persistent sandbox '$VM_NAME' already exists in krunvm."
 else
     echo "==> Creating persistent sandbox '$VM_NAME'..."
@@ -152,20 +160,14 @@ else
         IFS=':' read -r h_dir v_dir m_mode <<< "$mount_entry"
         MOUNT_FLAGS+=("-v" "${h_dir}:${v_dir}")
     done
-    MOUNT_FLAGS+=("-v" "/dev/shm:/dev/shm")
 
-    # Inject sandbox environment and global telemetry hooks
-    SANDBOX_CONFIG_DIR="${SCRIPT_DIR}/.agents"
-    if [[ -d "$SANDBOX_CONFIG_DIR" ]]; then
-        MOUNT_FLAGS+=("-v" "${SANDBOX_CONFIG_DIR}:/home/${VM_USER}/.gemini/config:ro")
-    fi
-
-    "$KRUNVM_BIN" create "$OCI_BASE_IMAGE" \
+    "$KRUNVM_BIN" create \
         --name "$VM_NAME" \
         --cpus "$VM_CPUS" \
         --mem "$VM_MEMORY" \
         --workdir "$PRIMARY_VM_DIR" \
-        "${MOUNT_FLAGS[@]}"
+        "${MOUNT_FLAGS[@]}" \
+        "$OCI_BASE_IMAGE"
 
     echo "==> Persistent sandbox '$VM_NAME' created successfully."
 fi
@@ -190,5 +192,5 @@ echo " 2. Launch Ephemeral MicroVM Subagent (<100ms cold start):"
 echo "    ./scripts/launch_subagent_microvm.sh [scratch_dir] [command...]"
 echo ""
 echo " 3. Verify Langfuse & OTEL Connectivity:"
-echo "    ./scripts/test_connectivity.sh"
+echo "    ./run_sandbox.sh test_connectivity"
 echo "=========================================================================="

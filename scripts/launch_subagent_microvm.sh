@@ -36,7 +36,7 @@ SUBAGENT_CMD=("${@:-/bin/bash}")
 
 echo "==> [Ephemeral MicroVM] Spawning subagent sandbox '$SUBAGENT_ID'..."
 echo "    CPUs: $SUBAGENT_CPUS | RAM: ${SUBAGENT_MEM}MB | Image: $OCI_IMAGE"
-echo "    Scratch Mount: $SCRATCH_DIR -> /mnt/workspace"
+echo "    Scratch Mount: $SCRATCH_DIR -> /workspace"
 
 # Cleanup trap ensures the microVM is destroyed upon command completion or failure
 cleanup() {
@@ -45,14 +45,20 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Create the ephemeral microVM with strict isolation
-"$KRUNVM_EXEC" create "$OCI_IMAGE" \
+# Create the ephemeral microVM with strict isolation (single-depth guest path /workspace)
+"$KRUNVM_EXEC" create \
     --name "$SUBAGENT_ID" \
     --cpus "$SUBAGENT_CPUS" \
     --mem "$SUBAGENT_MEM" \
-    --workdir "/mnt/workspace" \
-    -v "$SCRATCH_DIR:/mnt/workspace:rw" \
-    -v "/dev/shm:/dev/shm"
+    --workdir "/workspace" \
+    -v "$SCRATCH_DIR:/workspace" \
+    "$OCI_IMAGE"
 
 echo "==> [Ephemeral MicroVM] Starting subagent execution in YOLO mode..."
-"$KRUNVM_EXEC" start "$SUBAGENT_ID" "${SUBAGENT_CMD[@]}"
+if [[ ${#SUBAGENT_CMD[@]} -eq 1 ]]; then
+    "$KRUNVM_EXEC" start "$SUBAGENT_ID" "${SUBAGENT_CMD[0]}"
+else
+    cmd="${SUBAGENT_CMD[0]}"
+    args=("${SUBAGENT_CMD[@]:1}")
+    "$KRUNVM_EXEC" start "$SUBAGENT_ID" "$cmd" -- "${args[@]}"
+fi

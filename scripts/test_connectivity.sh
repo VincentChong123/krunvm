@@ -37,15 +37,23 @@ if [ -z "$LANGFUSE_PUB" ] || [ -z "$LANGFUSE_SEC" ]; then
     exit 1
 fi
 
-# Auto-detect host IP from default route if not explicitly set
-HOST_IP="${HOST_IP:-$(ip route show default 2>/dev/null | awk '/default/ {print $3}' || echo "127.0.0.1")}"
-LANGFUSE_HOST="${LANGFUSE_CONNECT_IP:-$HOST_IP}"
-if [ "$LANGFUSE_HOST" = "127.0.0.1" ] || [ "$LANGFUSE_HOST" = "localhost" ]; then
-    if ! curl -s --connect-timeout 0.5 "http://${LANGFUSE_HOST}:${LANGFUSE_PORT}/api/public/health" >/dev/null 2>&1; then
-        LANGFUSE_HOST="$HOST_IP"
+# Auto-detect host IP from default route or fallback to loopback (TSI / microVM)
+DEFAULT_ROUTE_IP="$(ip route show default 2>/dev/null | awk '/default/ {print $3}' || true)"
+HOST_IP="${HOST_IP:-${DEFAULT_ROUTE_IP:-127.0.0.1}}"
+
+if [ -n "${LANGFUSE_SERVER_URL:-}" ]; then
+    LANGFUSE_URL="$LANGFUSE_SERVER_URL"
+elif [ -n "${LANGFUSE_HOST:-}" ] && [[ "$LANGFUSE_HOST" == http* ]]; then
+    LANGFUSE_URL="$LANGFUSE_HOST"
+else
+    LANGFUSE_TARGET="${LANGFUSE_CONNECT_IP:-${LANGFUSE_HOST:-$HOST_IP}}"
+    if [ "$LANGFUSE_TARGET" = "127.0.0.1" ] || [ "$LANGFUSE_TARGET" = "localhost" ]; then
+        if ! curl -s --connect-timeout 0.5 "http://${LANGFUSE_TARGET}:${LANGFUSE_PORT}/api/public/health" >/dev/null 2>&1; then
+            LANGFUSE_TARGET="$HOST_IP"
+        fi
     fi
+    LANGFUSE_URL="http://${LANGFUSE_TARGET}:${LANGFUSE_PORT}"
 fi
-LANGFUSE_URL="http://${LANGFUSE_HOST}:${LANGFUSE_PORT}"
 
 # 2. Generate Random Trace ID (16 bytes = 32 hex) and Span ID (8 bytes = 16 hex)
 TRACE_ID="$(openssl rand -hex 16)"

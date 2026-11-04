@@ -23,6 +23,13 @@ if [[ ! -x "$KRUNVM_EXEC" ]]; then
     exit 1
 fi
 
-CMD=("${@:-/bin/bash}")
 echo "==> Starting persistent microVM '$VM_NAME' in YOLO mode..."
-exec "$KRUNVM_EXEC" start "$VM_NAME" "${CMD[@]}"
+if [[ $# -eq 0 ]]; then
+    exec "$KRUNVM_EXEC" start "$VM_NAME" /bin/bash
+elif [[ $# -eq 1 ]]; then
+    exec "$KRUNVM_EXEC" start "$VM_NAME" "$1"
+else
+    cmd="$1"
+    shift
+    exec "$KRUNVM_EXEC" start "$VM_NAME" "$cmd" -- "$@"
+fi
