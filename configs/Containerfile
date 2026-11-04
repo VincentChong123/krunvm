@@ -28,6 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Astral uv binary
 RUN curl -LsSf https://astral.sh/uv/install.sh | env CARGO_HOME=/usr/local UV_INSTALL_DIR=/usr/local/bin sh
 
+# Install Antigravity CLI binary globally into /usr/local/bin
+RUN curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin
+
 # Configure non-root ubuntu user (UID 1000, GID 1000) with passwordless sudo for YOLO mode
 RUN if ! id -u ubuntu >/dev/null 2>&1; then \
         groupadd -g 1000 ubuntu && useradd -u 1000 -g 1000 -m -s /bin/bash ubuntu; \
@@ -63,7 +66,7 @@ RUN chmod +x /home/ubuntu/.gemini/antigravity-cli/scripts/* && \
     ln -sf /home/ubuntu/.gemini/antigravity-cli/scripts/get_active_agy_session.sh /usr/local/bin/get_active_agy_session && \
     ln -sf /home/ubuntu/.gemini/antigravity-cli/scripts/test_connectivity.sh /usr/local/bin/test_connectivity && \
     ln -sf /home/ubuntu/.gemini/antigravity-cli/scripts/test_smoke.sh /usr/local/bin/test_smoke && \
-    chown -R ubuntu:ubuntu /home/ubuntu/.gemini
+    chown -R ubuntu:ubuntu /home/ubuntu
 
 # Set environment variables for login and subshell sessions
 RUN echo 'export PATH="/usr/local/bin:$PATH"' >> /home/ubuntu/.bashrc && \
