@@ -67,7 +67,7 @@ flowchart TD
 ├── configs/
 │   └── Containerfile                  # OCI base image definition (Ubuntu + uv + OTEL)
 ├── docs/
-│   ├── multipass-vs-krunvm-comparison.md # Technical trade-off matrix
+│   ├── multipass-vs-krunvm-bwrap-comparison.md # Technical trade-off matrix & bwrap architecture
 │   └── plans/
 │       └── krunvm-implementation-plan.md # Full architecture specification
 ├── scripts/

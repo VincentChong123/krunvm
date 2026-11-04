@@ -31,7 +31,7 @@
 ├── configs/
 │   └── Containerfile                   # Base OCI image definition (Ubuntu 24.04/26.04 + uv + OTEL + Browser deps)
 ├── docs/
-│   ├── multipass-vs-krunvm-comparison.md # Prior trade-off matrix
+│   ├── multipass-vs-krunvm-bwrap-comparison.md # Prior trade-off matrix & bwrap architecture
 │   └── plans/
 │       └── krunvm-implementation-plan.md # Persistent project copy of this plan
 ├── scripts/
