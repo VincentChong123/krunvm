@@ -1,0 +1,56 @@
+name: Governance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+jobs:
+  commitlint:
+    name: Lint Commit Messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate PR Commits
+        run: |
+          npx --yes -p @commitlint/cli -p @commitlint/config-conventional \
+            commitlint --from=${{ github.event.pull_request.base.sha || 'HEAD~1' }} --to=${{ github.event.pull_request.head.sha || 'HEAD' }} --verbose
+
+  lint:
+    name: Code & Config Linter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies for Pyright
+        run: |
+          if [ -f apps/ai_service/pyproject.toml ]; then
+            uv python install 3.12
+            uv sync --project apps/ai_service --all-groups
+          elif [ -f pyproject.toml ]; then
+            uv python install 3.12
+            uv sync --all-groups
+          fi
+
+      - name: Run pre-commit
+        uses: pre-commit/action@v3.0.1
