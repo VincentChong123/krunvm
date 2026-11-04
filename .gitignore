@@ -1,0 +1,155 @@
+# ==============================================================================
+# INDUSTRIAL-READY .GITIGNORE
+# Organized for Python, Node.js, Docker, and Infrastructure
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment Variables & Secrets (CRITICAL SECURITY)
+# ------------------------------------------------------------------------------
+# Environments
+.env
+.env.*
+!.env.example
+!.env.template
+**/.env
+.del-env
+
+# Credentials and Keys
+/keys/
+credentials.json
+gha-creds-*.json
+yminnn2-agy-prj-01-*.json
+
+# ------------------------------------------------------------------------------
+# 2. Python Ecosystem
+# ------------------------------------------------------------------------------
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments & Package Management
+.venv/
+venv/
+**/.venv
+.tmp_venv/
+**/.tmp_venv
+**/.tmp_uv_cache
+Pipfile.lock
+
+# Distributions and builds
+build/
+dist/
+*.egg-info/
+.eggs/
+/docs/notebooks/doc_micro_access_ctr_notebooks.egg-info
+
+# Testing & Tooling Caches
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ------------------------------------------------------------------------------
+# 3. Node.js Ecosystem
+# ------------------------------------------------------------------------------
+node_modules/
+**/node_modules
+**/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+.eslintcache
+
+# ------------------------------------------------------------------------------
+# 4. OS & IDE Configuration
+# ------------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDEs
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# ------------------------------------------------------------------------------
+# 5. Project-Specific Local Data & Temp Files
+# ------------------------------------------------------------------------------
+# Temporary Files
+**/__tmp__
+*.pdf
+
+# Notebook Builds
+/docs/notebooks/build/
+
+# Data Directories (MinIO & Document Service)
+/minio-data/
+/infrastructure/minio/
+/apps/document_service/data/
+
+# ------------------------------------------------------------------------------
+# 6. Infrastructure & Deployment (Auto-generated)
+# ------------------------------------------------------------------------------
+/infrastructure/dockerimages.env
+/infrastructure/service-final.yaml
+/infrastructure/.release.env
+/infrastructure/.release-digests.env
+
+# ------------------------------------------------------------------------------
+# 7. Agentic Tools (Graphify & Antigravity)
+# ------------------------------------------------------------------------------
+# Graphify
+**/graphify-out/
+.graphify_cache/
+.graphify_analysis.json
+.graphify_labels.json
+
+# Antigravity CLI
+.antigravitycli/
+.antigravitycli/*.json
+
+# data files
+**/*.csv
+
+# temporary folders
+**/__tmp__
+**/Untitled*
+docs/notebooks/build
+
+# Obsidian related
+docs/.obsidian/
+docs/.venv
+site/
+
+**/.cache
+
+**/*.pdf
+
+.env
+.env.*
+*.pem
+*.key
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.log
+
+# clasp
+# **/.clasp.json
+
+**/backup/
