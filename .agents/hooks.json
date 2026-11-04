@@ -1,0 +1,24 @@
+{
+  "live-yolo-otel-export": {
+    "enabled": true,
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "export_agy_otel",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "export_agy_otel",
+        "timeout": 5
+      }
+    ]
+  }
+}

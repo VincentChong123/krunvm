@@ -1,0 +1,55 @@
+# ── Secrets & credentials ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ── Python runtime ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# ── Compiled Binaries & Rust / C Build Artifacts ──────────────────────────────
+target/
+*.so
+*.so.*
+*.a
+*.o
+*.dylib
+src_deps/
+libkrunfw/
+libkrun/
+krunvm-src/
+
+# ── OS & editor noise ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# ── Logs & temporary files ────────────────────────────────────────────────────
+*.log
+.cache/
+__tmp__/
+scratch/
+backup/
+*.tmp
+*.bak

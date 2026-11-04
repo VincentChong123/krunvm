@@ -1,0 +1,79 @@
+# syntax=docker/dockerfile:1
+# ==============================================================================
+# Containerfile - Base OCI Image for krunvm Agent Sandbox
+# ==============================================================================
+
+FROM ubuntu:24.04
+
+# Prevent interactive prompts during apt operations
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# Install core utilities and Python 3 runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    build-essential \
+    jq \
+    iproute2 \
+    sudo \
+    python3 \
+    python3-venv \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Astral uv binary
+RUN curl -LsSf https://astral.sh/uv/install.sh | env CARGO_HOME=/usr/local UV_INSTALL_DIR=/usr/local/bin sh
+
+# Configure non-root ubuntu user (UID 1000, GID 1000) with passwordless sudo for YOLO mode
+RUN if ! id -u ubuntu >/dev/null 2>&1; then \
+        groupadd -g 1000 ubuntu && useradd -u 1000 -g 1000 -m -s /bin/bash ubuntu; \
+    fi && \
+    echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu && \
+    chmod 0440 /etc/sudoers.d/ubuntu
+
+# Create native ext4 Python virtual environment at /var/venv
+RUN mkdir -p /var/venv && \
+    /usr/local/bin/uv venv /var/venv --python 3.12 && \
+    chown -R ubuntu:ubuntu /var/venv
+
+# Pre-provision the Antigravity OTEL hooks virtual environment for Langfuse streaming
+USER ubuntu
+ENV HOME=/home/ubuntu
+RUN mkdir -p /home/ubuntu/.gemini/antigravity-cli/hooks_env && \
+    /usr/local/bin/uv venv /home/ubuntu/.gemini/antigravity-cli/hooks_env/.venv --python 3.12 && \
+    /usr/local/bin/uv pip install --python /home/ubuntu/.gemini/antigravity-cli/hooks_env/.venv \
+        opentelemetry-sdk \
+        opentelemetry-exporter-otlp-proto-http \
+        python-dotenv
+
+# Copy centralized telemetry exporter scripts into guest
+USER root
+COPY scripts/export_agy_otel.sh /home/ubuntu/.gemini/antigravity-cli/scripts/export_agy_otel.sh
+COPY scripts/export_agy_otel_to_langfuse.py /home/ubuntu/.gemini/antigravity-cli/scripts/export_agy_otel_to_langfuse.py
+COPY scripts/get_active_agy_session.sh /home/ubuntu/.gemini/antigravity-cli/scripts/get_active_agy_session.sh
+COPY scripts/test_connectivity.sh /home/ubuntu/.gemini/antigravity-cli/scripts/test_connectivity.sh
+COPY scripts/test_smoke.sh /home/ubuntu/.gemini/antigravity-cli/scripts/test_smoke.sh
+
+RUN chmod +x /home/ubuntu/.gemini/antigravity-cli/scripts/* && \
+    ln -sf /home/ubuntu/.gemini/antigravity-cli/scripts/export_agy_otel.sh /usr/local/bin/export_agy_otel && \
+    ln -sf /home/ubuntu/.gemini/antigravity-cli/scripts/get_active_agy_session.sh /usr/local/bin/get_active_agy_session && \
+    ln -sf /home/ubuntu/.gemini/antigravity-cli/scripts/test_connectivity.sh /usr/local/bin/test_connectivity && \
+    ln -sf /home/ubuntu/.gemini/antigravity-cli/scripts/test_smoke.sh /usr/local/bin/test_smoke && \
+    chown -R ubuntu:ubuntu /home/ubuntu/.gemini
+
+# Set environment variables for login and subshell sessions
+RUN echo 'export PATH="/usr/local/bin:$PATH"' >> /home/ubuntu/.bashrc && \
+    echo 'export UV_PROJECT_ENVIRONMENT="/var/venv"' >> /home/ubuntu/.bashrc && \
+    echo 'export VIRTUAL_ENV="/var/venv"' >> /home/ubuntu/.bashrc && \
+    echo 'export PATH="/var/venv/bin:$PATH"' >> /home/ubuntu/.bashrc
+
+# Ensure workspace mount point exists
+RUN mkdir -p /mnt/workspace && chown ubuntu:ubuntu /mnt/workspace
+
+USER ubuntu
+WORKDIR /mnt/workspace
+
+CMD ["/bin/bash"]
