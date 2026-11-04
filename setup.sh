@@ -2,14 +2,24 @@
 # ==============================================================================
 # setup.sh - Hardened krunvm MicroVM Provisioning & Lifecycle Engine
 # Creates and configures the Persistent Sandbox and subagent orchestration layer.
+# Supports hierarchical .env / .env.host / .env.sandbox architecture.
 # ==============================================================================
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RECREATE=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --recreate|-r)
+            RECREATE=true
+            ;;
+    esac
+done
 
 # ------------------------------------------------------------------------------
-# 1. Environment & Configuration Loading (.env)
+# 1. Environment & Configuration Loading (.env.host / .env)
 # ------------------------------------------------------------------------------
 if [[ -z "${ENV_FILE:-}" ]]; then
     if [[ -f "${SCRIPT_DIR}/.env.host" ]]; then
@@ -61,9 +71,12 @@ if [[ ${#MISSING_CONFIG_VARS[@]} -gt 0 ]]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 3. Volume Parsing & krunvm Constraint Validation
+# 3. Volume Parsing, Normalization & krunvm Constraint Handling
 # ------------------------------------------------------------------------------
 PARSED_MOUNTS=()
+RO_MOUNTS=()
+SYMLINKS=()
+
 while IFS= read -r line || [[ -n "$line" ]]; do
     line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     [[ -z "$line" || "$line" =~ ^# ]] && continue
@@ -74,17 +87,29 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     for token in $line; do
         if [[ "$token" =~ ^(/[^:]+):(/[^:]+)(:(ro|rw))?$ ]]; then
             h_dir="${BASH_REMATCH[1]}"
-            v_dir="${BASH_REMATCH[2]}"
+            raw_v_dir="${BASH_REMATCH[2]}"
             m_mode="${BASH_REMATCH[4]:-rw}"
 
-            # krunvm constraint: guest_path must be a single direct root child (e.g. /workspace)
-            trimmed_v="${v_dir#/}"
-            if [[ "$trimmed_v" == *"/"* || -z "$trimmed_v" ]]; then
+            # krunvm requires guest paths to be a direct root child (e.g. /doc-micro-access-ctr)
+            # If user specifies /home/ubuntu/<name>, extract /<name> for krunvm and symlink it
+            if [[ "$raw_v_dir" =~ ^/home/[^/]+/(.+)$ ]]; then
+                leaf="${BASH_REMATCH[1]}"
+                v_vm_dir="/${leaf}"
+                v_symlink="$raw_v_dir"
+            elif [[ "$raw_v_dir" =~ ^/([^/]+)$ ]]; then
+                v_vm_dir="$raw_v_dir"
+                v_symlink="/home/${VM_USER:-ubuntu}/${BASH_REMATCH[1]}"
+            else
                 echo "[ERROR] Invalid volume mapping '$token':" >&2
-                echo "        krunvm requires guest_path to be a direct root child (e.g. /workspace, /scratch)." >&2
+                echo "        krunvm requires guest_path to be a direct root child (e.g. /workspace) or /home/ubuntu/<name>." >&2
                 exit 1
             fi
-            PARSED_MOUNTS+=("${h_dir}:${v_dir}:${m_mode}")
+
+            if [[ "$m_mode" == "ro" ]]; then
+                RO_MOUNTS+=("${v_vm_dir}")
+            fi
+            SYMLINKS+=("${v_vm_dir}:${v_symlink}")
+            PARSED_MOUNTS+=("${h_dir}:${v_vm_dir}:${m_mode}")
         else
             echo "[ERROR] Invalid volume mapping in VOLUMES: '$token'" >&2
             echo "        Expected syntax: /path/on/host:/path_in_vm[:ro|:rw]" >&2
@@ -152,8 +177,18 @@ echo "==> Checking current status of persistent sandbox '$VM_NAME'..."
 VM_LIST="$("$KRUNVM_BIN" list 2>/dev/null || true)"
 
 if echo "$VM_LIST" | grep -q "^${VM_NAME}[[:space:]]*$"; then
-    echo "==> Persistent sandbox '$VM_NAME' already exists in krunvm."
-else
+    if [[ "$RECREATE" == "true" ]]; then
+        echo "==> Deleting existing microVM '$VM_NAME' for clean recreation (--recreate)..."
+        "$KRUNVM_BIN" delete "$VM_NAME" >/dev/null 2>&1 || true
+    else
+        echo "==> Persistent sandbox '$VM_NAME' already exists in krunvm."
+        echo "    Tip: Run './setup.sh --recreate' to apply new volume mappings."
+    fi
+fi
+
+# Re-check after potential deletion
+VM_LIST="$("$KRUNVM_BIN" list 2>/dev/null || true)"
+if ! echo "$VM_LIST" | grep -q "^${VM_NAME}[[:space:]]*$"; then
     echo "==> Creating persistent sandbox '$VM_NAME'..."
     MOUNT_FLAGS=()
     for mount_entry in "${PARSED_MOUNTS[@]}"; do
@@ -170,10 +205,90 @@ else
         "$OCI_BASE_IMAGE"
 
     echo "==> Persistent sandbox '$VM_NAME' created successfully."
+
+    # --------------------------------------------------------------------------
+    # 7. Post-Provisioning Initialization (Symlinks, RO Mounts, Telemetry Secrets)
+    # --------------------------------------------------------------------------
+    echo "==> Configuring guest environment (symlinks, ro mounts, telemetry)..."
+
+    # Find a writable mounted host folder for the init script handoff
+    HANDOFF_HOST_DIR="$PRIMARY_HOST_DIR"
+    HANDOFF_VM_DIR="$PRIMARY_VM_DIR"
+    for mount_entry in "${PARSED_MOUNTS[@]}"; do
+        IFS=':' read -r h_dir v_dir m_mode <<< "$mount_entry"
+        if [[ "$m_mode" == "rw" ]]; then
+            HANDOFF_HOST_DIR="$h_dir"
+            HANDOFF_VM_DIR="$v_dir"
+            break
+        fi
+    done
+
+    INIT_SCRIPT_HOST="${HANDOFF_HOST_DIR}/.tmp_krun_init.sh"
+    INIT_SCRIPT_GUEST="${HANDOFF_VM_DIR}/.tmp_krun_init.sh"
+
+    cat << 'EOF' > "$INIT_SCRIPT_HOST"
+#!/bin/bash
+set -euo pipefail
+
+# 1. Setup symlinks in /home/ubuntu for Multipass compatibility
+EOF
+
+    for sym_entry in "${SYMLINKS[@]}"; do
+        IFS=':' read -r src dest <<< "$sym_entry"
+        echo "mkdir -p \"$(dirname "$dest")\" && ln -sfn \"$src\" \"$dest\"" >> "$INIT_SCRIPT_HOST"
+    done
+
+    cat << 'EOF' >> "$INIT_SCRIPT_HOST"
+# 2. Configure enforce-mounts script for read-only volume protection
+cat << 'ENFORCE_EOF' > /usr/local/bin/enforce-mounts.sh
+#!/bin/bash
+set -e
+EOF
+
+    for ro_mount in "${RO_MOUNTS[@]}"; do
+        cat << ENFORCE_RO >> "$INIT_SCRIPT_HOST"
+if [ -d "$ro_mount" ]; then
+    mount --bind "$ro_mount" "$ro_mount" 2>/dev/null || true
+    mount -o remount,ro,bind "$ro_mount" 2>/dev/null || true
+fi
+ENFORCE_RO
+    done
+
+    cat << 'EOF' >> "$INIT_SCRIPT_HOST"
+ENFORCE_EOF
+chmod +x /usr/local/bin/enforce-mounts.sh
+/usr/local/bin/enforce-mounts.sh
+
+# Install global bash login and interactive hook to ensure RO mounts stay locked
+cat << 'PROFILE_EOF' > /etc/profile.d/enforce-mounts.sh
+if [ -x /usr/local/bin/enforce-mounts.sh ]; then
+    /usr/local/bin/enforce-mounts.sh >/dev/null 2>&1 || true
+fi
+PROFILE_EOF
+chmod +x /etc/profile.d/enforce-mounts.sh
+
+if ! grep -q "enforce-mounts.sh" /etc/bash.bashrc 2>/dev/null; then
+    echo '[ -x /usr/local/bin/enforce-mounts.sh ] && /usr/local/bin/enforce-mounts.sh >/dev/null 2>&1 || true' >> /etc/bash.bashrc
+fi
+
+# 3. Inject guest sandbox secrets if available
+mkdir -p /home/ubuntu/.gemini/antigravity-cli
+if [ -f /krunvm/.env.sandbox ]; then
+    cp /krunvm/.env.sandbox /home/ubuntu/.gemini/antigravity-cli/.env
+elif [ -f /.env.sandbox ]; then
+    cp /.env.sandbox /home/ubuntu/.gemini/antigravity-cli/.env
+fi
+chown -R ubuntu:ubuntu /home/ubuntu
+EOF
+
+    chmod +x "$INIT_SCRIPT_HOST"
+    # Execute guest initialization inside krunvm
+    "$KRUNVM_BIN" start "$VM_NAME" -- bash "$INIT_SCRIPT_GUEST" || true
+    rm -f "$INIT_SCRIPT_HOST"
 fi
 
 # ------------------------------------------------------------------------------
-# 7. Telemetry & Summary
+# 8. Summary & Next Steps
 # ------------------------------------------------------------------------------
 echo ""
 echo "=========================================================================="
@@ -181,16 +296,18 @@ echo " krunvm MicroVM Setup Complete!"
 echo "=========================================================================="
 echo " Persistent Sandbox: $VM_NAME (CPUs: $VM_CPUS, RAM: ${VM_MEMORY}MB)"
 echo " Base Image:         $OCI_BASE_IMAGE"
-echo " Working Directory:  $PRIMARY_VM_DIR"
+echo " Primary Workdir:    $PRIMARY_VM_DIR"
+echo " Active Volumes:"
+for mount_entry in "${PARSED_MOUNTS[@]}"; do
+    IFS=':' read -r h_dir v_dir m_mode <<< "$mount_entry"
+    echo "   - $h_dir -> $v_dir ($m_mode)"
+done
 echo " Telemetry Target:   http://${HOST_TARGET_IP:-127.0.0.1}:${HOST_LANGFUSE_PORT}"
 echo ""
 echo "--- How to Run ---"
 echo " 1. Interactive Persistent Shell (YOLO Mode):"
 echo "    ./run_sandbox.sh"
 echo ""
-echo " 2. Launch Ephemeral MicroVM Subagent (<100ms cold start):"
-echo "    ./scripts/launch_subagent_microvm.sh [scratch_dir] [command...]"
-echo ""
-echo " 3. Verify Langfuse & OTEL Connectivity:"
+echo " 2. Verify Langfuse & OTEL Connectivity:"
 echo "    ./run_sandbox.sh test_connectivity"
 echo "=========================================================================="

@@ -23,7 +23,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     python3-pip \
     bubblewrap \
+    podman \
+    crun \
+    fuse-overlayfs \
+    podman-docker \
+    podman-compose \
     && rm -rf /var/lib/apt/lists/*
+
+# Configure Podman storage for rootless / virtiofs execution
+RUN mkdir -p /etc/containers /run/containers/storage /var/lib/containers/storage && \
+    touch /etc/containers/nodocker && \
+    cat <<'EOF' > /etc/containers/storage.conf
+[storage]
+driver = "overlay"
+runroot = "/run/containers/storage"
+graphroot = "/var/lib/containers/storage"
+
+[storage.options]
+mount_program = "/usr/bin/fuse-overlayfs"
+EOF
 
 # Install Astral uv binary
 RUN curl -LsSf https://astral.sh/uv/install.sh | env CARGO_HOME=/usr/local UV_INSTALL_DIR=/usr/local/bin sh

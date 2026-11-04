@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # run_sandbox.sh - Fast interactive launcher for the Persistent krunvm Sandbox
+# Supports hierarchical .env.host / .env loading and enforces read-only volumes.
 # ==============================================================================
 
 set -euo pipefail
@@ -27,9 +28,9 @@ echo "==> Starting persistent microVM '$VM_NAME' in YOLO mode..."
 if [[ $# -eq 0 ]]; then
     exec "$KRUNVM_EXEC" start "$VM_NAME" /bin/bash
 elif [[ $# -eq 1 ]]; then
-    exec "$KRUNVM_EXEC" start "$VM_NAME" "$1"
+    exec "$KRUNVM_EXEC" start "$VM_NAME" /bin/bash -- -c "/usr/local/bin/enforce-mounts.sh 2>/dev/null || true; exec $1"
 else
     cmd="$1"
     shift
-    exec "$KRUNVM_EXEC" start "$VM_NAME" "$cmd" -- "$@"
+    exec "$KRUNVM_EXEC" start "$VM_NAME" /bin/bash -- -c "/usr/local/bin/enforce-mounts.sh 2>/dev/null || true; exec \"\$@\"" -- "$cmd" "$@"
 fi
