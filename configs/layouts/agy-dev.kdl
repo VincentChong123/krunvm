@@ -1,0 +1,20 @@
+layout {
+    default_tab_template {
+        children
+        pane size=1 borderless=true {
+            plugin location="compact-bar"
+        }
+    }
+
+    tab name="🤖 AGY YOLO" focus=true {
+        pane {
+            command "bash"
+        }
+    }
+
+    tab name="💻 Dev Console" {
+        pane {
+            command "bash"
+        }
+    }
+}

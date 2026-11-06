@@ -12,6 +12,12 @@ RECREATE=false
 
 for arg in "$@"; do
     case "$arg" in
+        --as-runner)
+            if [[ "$(id -un)" != "sandbox-runner" ]]; then
+                echo "==> Re-executing setup.sh as 'sandbox-runner'..."
+                exec sudo -u sandbox-runner -H "$0" "$@"
+            fi
+            ;;
         --recreate|-r)
             RECREATE=true
             ;;
@@ -39,6 +45,12 @@ echo "==> Loading configuration from $ENV_FILE..."
 set -a
 source "$ENV_FILE"
 set +a
+
+# Support running under dedicated sandbox user configured in .env.host
+if [[ -n "${SANDBOX_HOST_USER:-}" ]] && [[ "$(id -un)" != "$SANDBOX_HOST_USER" ]]; then
+    echo "==> Re-executing setup.sh as isolated host user '$SANDBOX_HOST_USER'..."
+    exec sudo -u "$SANDBOX_HOST_USER" -H "$0" "$@"
+fi
 
 # ------------------------------------------------------------------------------
 # 2. Strict Configuration Validation
@@ -77,6 +89,13 @@ PARSED_MOUNTS=()
 RO_MOUNTS=()
 SYMLINKS=()
 
+# Dynamically resolve and substitute user variables in VOLUMES
+EFFECTIVE_USER="${SANDBOX_HOST_USER:-${VM_USER:-sandbox-runner}}"
+VOLUMES="${VOLUMES//\$SANDBOX_HOST_USER/$EFFECTIVE_USER}"
+VOLUMES="${VOLUMES//\$\{SANDBOX_HOST_USER\}/$EFFECTIVE_USER}"
+VOLUMES="${VOLUMES//\$VM_USER/$EFFECTIVE_USER}"
+VOLUMES="${VOLUMES//\$\{VM_USER\}/$EFFECTIVE_USER}"
+
 while IFS= read -r line || [[ -n "$line" ]]; do
     line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
     [[ -z "$line" || "$line" =~ ^# ]] && continue
@@ -91,14 +110,14 @@ while IFS= read -r line || [[ -n "$line" ]]; do
             m_mode="${BASH_REMATCH[4]:-rw}"
 
             # krunvm requires guest paths to be a direct root child (e.g. /doc-micro-access-ctr)
-            # If user specifies /home/ubuntu/<name>, extract /<name> for krunvm and symlink it
+            # If user specifies /home/<user>/<name>, extract /<name> for krunvm and symlink it
             if [[ "$raw_v_dir" =~ ^/home/[^/]+/(.+)$ ]]; then
                 leaf="${BASH_REMATCH[1]}"
                 v_vm_dir="/${leaf}"
-                v_symlink="$raw_v_dir"
+                v_symlink="/home/${EFFECTIVE_USER}/${leaf}"
             elif [[ "$raw_v_dir" =~ ^/([^/]+)$ ]]; then
                 v_vm_dir="$raw_v_dir"
-                v_symlink="/home/${VM_USER:-ubuntu}/${BASH_REMATCH[1]}"
+                v_symlink="/home/${EFFECTIVE_USER}/${BASH_REMATCH[1]}"
             else
                 echo "[ERROR] Invalid volume mapping '$token':" >&2
                 echo "        krunvm requires guest_path to be a direct root child (e.g. /workspace) or /home/ubuntu/<name>." >&2
@@ -143,15 +162,22 @@ IFS=':' read -r PRIMARY_HOST_DIR PRIMARY_VM_DIR PRIMARY_MODE <<< "${PARSED_MOUNT
 # ------------------------------------------------------------------------------
 KRUNVM_BIN="${KRUNVM_BIN:-}"
 if [[ -z "$KRUNVM_BIN" ]]; then
-    if command -v krunvm >/dev/null 2>&1; then
-        KRUNVM_BIN="$(command -v krunvm)"
-    elif [[ -x "${HOME}/.local/bin/krunvm" ]]; then
-        KRUNVM_BIN="${HOME}/.local/bin/krunvm"
-    else
-        echo "[ERROR] 'krunvm' executable not found on host." >&2
-        echo "        Please build it first: bash scripts/build_krunvm_host.sh" >&2
-        exit 1
-    fi
+    for candidate in \
+        "$(command -v krunvm 2>/dev/null || true)" \
+        "/usr/local/bin/krunvm" \
+        "/home/vin/.local/bin/krunvm" \
+        "${HOME}/.local/bin/krunvm"; do
+        if [[ -n "$candidate" && -x "$candidate" ]]; then
+            KRUNVM_BIN="$candidate"
+            break
+        fi
+    done
+fi
+
+if [[ ! -x "${KRUNVM_BIN:-}" ]]; then
+    echo "[ERROR] 'krunvm' executable not found on host." >&2
+    echo "        Please build it first: bash scripts/build_krunvm_host.sh" >&2
+    exit 1
 fi
 
 # ------------------------------------------------------------------------------
@@ -230,7 +256,17 @@ if ! echo "$VM_LIST" | grep -q "^${VM_NAME}[[:space:]]*$"; then
 #!/bin/bash
 set -euo pipefail
 
-# 1. Setup symlinks in /home/ubuntu for Multipass compatibility
+# 0. Ensure sandbox-runner user exists with passwordless sudo
+TARGET_GUEST_USER="${VM_USER:-sandbox-runner}"
+if id -u ubuntu >/dev/null 2>&1 && [ "$TARGET_GUEST_USER" = "sandbox-runner" ] && ! id -u sandbox-runner >/dev/null 2>&1; then
+    usermod -l sandbox-runner -d /home/sandbox-runner -m ubuntu 2>/dev/null || true
+    groupmod -n sandbox-runner ubuntu 2>/dev/null || true
+    ln -sfn /home/sandbox-runner /home/ubuntu
+    echo "sandbox-runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/sandbox-runner
+    chmod 0440 /etc/sudoers.d/sandbox-runner
+fi
+
+# 1. Setup symlinks in home directory for Multipass compatibility
 EOF
 
     for sym_entry in "${SYMLINKS[@]}"; do
@@ -271,7 +307,10 @@ if ! grep -q "enforce-mounts.sh" /etc/bash.bashrc 2>/dev/null; then
     echo '[ -x /usr/local/bin/enforce-mounts.sh ] && /usr/local/bin/enforce-mounts.sh >/dev/null 2>&1 || true' >> /etc/bash.bashrc
 fi
 
-# 3. Inject guest sandbox secrets if available
+# 3. Configure Git safe.directory to avoid dubious ownership warnings on mounted volumes
+git config --system --add safe.directory "*" 2>/dev/null || true
+
+# 4. Inject guest sandbox secrets if available
 mkdir -p /home/ubuntu/.gemini/antigravity-cli
 if [ -f /krunvm/.env.sandbox ]; then
     cp /krunvm/.env.sandbox /home/ubuntu/.gemini/antigravity-cli/.env
