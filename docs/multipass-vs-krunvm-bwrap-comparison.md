@@ -121,9 +121,9 @@ Migrating from the Multipass engine to `krunvm` + `bwrap` requires the following
 | Existing Component | Status | Required Replacement / Migration Action |
 | :--- | :--- | :--- |
 | [`setup.yaml`](file:///home/vin/ws/20_projects/21_github/Vincentchong123/multipass/setup.yaml) | **Obsolete** | Replaced with an OCI `Containerfile` built using `buildah`. |
-| [`setup.sh`](file:///home/vin/ws/20_projects/21_github/Vincentchong123/multipass/setup.sh) | **Refactored** | Replaces Multipass commands with `krunvm create` and single-depth volume mounts. |
-| `.env.host` | **Modified** | Configures `VM_NAME`, `VM_CPUS`, `VM_MEMORY`, and single-depth `/workspace` mount. |
-| `multipass-ro-mounts.service` | **Incompatible** | Mount flags handled at creation time or managed via internal `bwrap` mounts. |
+| [`setup.sh`](file:///home/vin/ws/20_projects/21_github/Vincentchong123/multipass/setup.sh) | **Refactored** | Replaces Multipass commands with `krunvm create`, single-depth volume normalizer, and `/home/ubuntu` symlinks. |
+| `.env.host` / `.env` | **Parity** | Fully preserved hierarchical model (`.env.host`, `.env`, `.env.example`, `.env.sandbox`, `.env.sandbox.example`). |
+| `multipass-ro-mounts.service` | **Replaced** | Enforced via in-guest Linux kernel bind-remounts (`mount --bind "$d" "$d" && mount -o remount,ro,bind "$d"`). |
 | Host Telemetry Bridge | **Simplified** | Guest connects directly to `http://127.0.0.1:3100` via TSI, avoiding gateway IP lookups. |
 
 ---
