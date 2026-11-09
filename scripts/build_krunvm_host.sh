@@ -25,22 +25,26 @@ mkdir -p "$SRC_DEPS_DIR"
 # ------------------------------------------------------------------------------
 # 0. Environment Setup & Toolchain Hotfixes
 # ------------------------------------------------------------------------------
-export PATH="$PREFIX/bin:$PATH"
+export PATH="$PREFIX/bin:$HOME/.cargo/bin:$PATH"
 export PKG_CONFIG_PATH="$PREFIX/lib64/pkgconfig:$PREFIX/${ARCH_LIBDIR}/pkgconfig:$PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 export LD_LIBRARY_PATH="$PREFIX/lib64:$PREFIX/${ARCH_LIBDIR}:$PREFIX/lib:${LD_LIBRARY_PATH:-}"
 export RUSTFLAGS="-L $PREFIX/lib64 -L $PREFIX/${ARCH_LIBDIR} -L $PREFIX/lib ${RUSTFLAGS:-}"
 
-# Fix 1: Ensure musl target is installed for krun-init blob
+# Fix 1: Ensure Rust toolchain and musl target are installed for krun-init blob
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "==> Rust toolchain (cargo) not found. Installing via rustup..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+    # shellcheck source=/dev/null
+    [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
+fi
 if command -v rustup >/dev/null 2>&1; then
     rustup target add "${HOST_ARCH}-unknown-linux-musl" >/dev/null 2>&1 || true
 fi
 
-# Fix 2: Provide unversioned libclang.so symlink if only versioned runtime exists
-if [[ ! -f "$PREFIX/lib/libclang.so" ]]; then
-    HOST_LIBCLANG="$(find /usr/lib -name "libclang-*.so.*" 2>/dev/null | head -n1 || true)"
-    if [[ -n "$HOST_LIBCLANG" ]]; then
-        ln -sf "$HOST_LIBCLANG" "$PREFIX/lib/libclang.so"
-    fi
+# Fix 2: Provide unversioned libclang.so symlink (exclude libclang-cpp.so*)
+HOST_LIBCLANG="$(find /usr/lib -name "libclang-[0-9]*.so.*" -o -name "libclang.so.[0-9]*" 2>/dev/null | head -n1 || true)"
+if [[ -n "$HOST_LIBCLANG" ]]; then
+    ln -sf "$HOST_LIBCLANG" "$PREFIX/lib/libclang.so"
 fi
 export LIBCLANG_PATH="$PREFIX/lib"
 
@@ -85,9 +89,11 @@ fi
 
 (
     cd "${SRC_DEPS_DIR}/libkrunfw"
-    make -j"$NPROC" PREFIX="$PREFIX"
+    yes "" | make -j"$NPROC" PREFIX="$PREFIX" || make -j"$NPROC" PREFIX="$PREFIX"
     make install PREFIX="$PREFIX"
 )
+ln -sf "$PREFIX/${ARCH_LIBDIR}"/libkrunfw.so* "$PREFIX/lib/" 2>/dev/null || true
+ln -sf "$PREFIX/${ARCH_LIBDIR}"/libkrunfw.so* "$PREFIX/lib64/" 2>/dev/null || true
 echo "==> libkrunfw installed."
 
 # ------------------------------------------------------------------------------
@@ -135,14 +141,14 @@ fi
 )
 
 # Install rootless user namespace auto-wrapper
-cat <<'EOF_WRAPPER' > "$PREFIX/bin/krunvm"
+cat <<EOF_WRAPPER > "$PREFIX/bin/krunvm"
 #!/usr/bin/env bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export LD_LIBRARY_PATH="/home/vin/.local/lib/x86_64-linux-gnu:/home/vin/.local/lib64:/home/vin/.local/lib:${LD_LIBRARY_PATH:-}"
-if [[ "${_CONTAINERS_USERNS_CONFIGURED:-}" != "done" ]]; then
-    exec buildah unshare -- "$0" "$@"
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+export LD_LIBRARY_PATH="$PREFIX/lib64:$PREFIX/${ARCH_LIBDIR}:$PREFIX/lib:\${LD_LIBRARY_PATH:-}"
+if [[ "\${_CONTAINERS_USERNS_CONFIGURED:-}" != "done" ]]; then
+    exec buildah unshare -- "\$0" "\$@"
 else
-    exec "${SCRIPT_DIR}/krunvm-bin" "$@"
+    exec "\${SCRIPT_DIR}/krunvm-bin" "\$@"
 fi
 EOF_WRAPPER
 chmod +x "$PREFIX/bin/krunvm"
