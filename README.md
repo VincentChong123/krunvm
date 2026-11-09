@@ -282,7 +282,7 @@ When the sandbox starts, native Zellij opens with dedicated full-screen tabs rat
 │ ubuntu@krun-agent-persistent2:/mnt/workspace                                 │
 │ $ agy                                                                        │
 │                                                                              │
-└──────────────────────────────────────────────────────────────────────────────┘
+│ └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 * **Tab 1 (`🤖 AGY YOLO`):** Full-screen workspace for running the Antigravity autonomous agent (`agy`).
