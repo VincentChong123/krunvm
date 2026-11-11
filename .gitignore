@@ -80,3 +80,6 @@ backup/
 .antigravitycli/
 .antigravitycli/*.json
 .graphify_cache/
+
+
+**/.obsidian
