@@ -52,6 +52,9 @@ if [[ -n "${SANDBOX_HOST_USER:-}" ]] && [[ "$(id -un)" != "$SANDBOX_HOST_USER" ]
     exec sudo -u "$SANDBOX_HOST_USER" -H "$0" "$@"
 fi
 
+# Optional Docker Compose-style volume mapping file (.env.mapped_dir)
+MAPPED_DIR_FILE="${MAPPED_DIR_FILE:-${SCRIPT_DIR}/.env.mapped_dir}"
+
 # ------------------------------------------------------------------------------
 # 2. Strict Configuration Validation
 # ------------------------------------------------------------------------------
@@ -62,7 +65,6 @@ REQUIRED_CONFIG_VARS=(
     "VM_MEMORY"
     "VM_USER"
     "VM_VENV_DIR"
-    "VOLUMES"
     "HOST_LANGFUSE_PORT"
     "HOST_OTEL_EXPORTER_PORT"
 )
@@ -88,6 +90,7 @@ fi
 PARSED_MOUNTS=()
 RO_MOUNTS=()
 SYMLINKS=()
+REAL_HOME="$(realpath "$HOME" 2>/dev/null || echo "$HOME")"
 
 # Dynamically resolve and substitute user variables in VOLUMES
 EFFECTIVE_USER="${SANDBOX_HOST_USER:-${VM_USER:-sandbox-runner}}"
@@ -96,63 +99,111 @@ VOLUMES="${VOLUMES//\$\{SANDBOX_HOST_USER\}/$EFFECTIVE_USER}"
 VOLUMES="${VOLUMES//\$VM_USER/$EFFECTIVE_USER}"
 VOLUMES="${VOLUMES//\$\{VM_USER\}/$EFFECTIVE_USER}"
 
-while IFS= read -r line || [[ -n "$line" ]]; do
-    line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-    [[ -z "$line" || "$line" =~ ^# ]] && continue
-    line="${line%%#*}"
-    line="$(echo "$line" | sed -e 's/[[:space:]]*$//')"
-    [[ -z "$line" ]] && continue
+validate_and_add_mount() {
+    local raw_token="$1"
+    local source_name="$2"
 
-    for token in $line; do
-        if [[ "$token" =~ ^(/[^:]+):(/[^:]+)(:(ro|rw))?$ ]]; then
-            h_dir="${BASH_REMATCH[1]}"
-            raw_v_dir="${BASH_REMATCH[2]}"
-            m_mode="${BASH_REMATCH[4]:-rw}"
+    # Support ~/ shorthand for host home directory
+    raw_token="${raw_token/#\~/$HOME}"
 
-            # krunvm requires guest paths to be a direct root child (e.g. /doc-micro-access-ctr)
-            # If user specifies /home/<user>/<name>, extract /<name> for krunvm and symlink it
-            if [[ "$raw_v_dir" =~ ^/home/[^/]+/(.+)$ ]]; then
-                leaf="${BASH_REMATCH[1]}"
-                v_vm_dir="/${leaf}"
-                v_symlink="/home/${EFFECTIVE_USER}/${leaf}"
-            elif [[ "$raw_v_dir" =~ ^/([^/]+)$ ]]; then
-                v_vm_dir="$raw_v_dir"
-                v_symlink="/home/${EFFECTIVE_USER}/${BASH_REMATCH[1]}"
-            else
-                echo "[ERROR] Invalid volume mapping '$token':" >&2
-                echo "        krunvm requires guest_path to be a direct root child (e.g. /workspace) or /home/ubuntu/<name>." >&2
-                exit 1
-            fi
+    # Expand environment variables safely if present
+    local token
+    eval "token=\"$raw_token\""
 
-            if [[ "$m_mode" == "ro" ]]; then
-                RO_MOUNTS+=("${v_vm_dir}")
-            fi
-            SYMLINKS+=("${v_vm_dir}:${v_symlink}")
-            PARSED_MOUNTS+=("${h_dir}:${v_vm_dir}:${m_mode}")
+    if [[ "$token" =~ ^(/[^:]+):(/[^:]+)(:(ro|rw))?$ ]]; then
+        local h_dir="${BASH_REMATCH[1]}"
+        local raw_v_dir="${BASH_REMATCH[2]}"
+        local m_mode="${BASH_REMATCH[4]:-rw}"
+
+        # krunvm requires guest paths to be a direct root child (e.g. /doc-micro-access-ctr)
+        # If user specifies /home/<user>/<name>, extract /<name> for krunvm and symlink it
+        local v_vm_dir
+        local v_symlink
+        if [[ "$raw_v_dir" =~ ^/home/[^/]+/(.+)$ ]]; then
+            local leaf="${BASH_REMATCH[1]}"
+            v_vm_dir="/${leaf}"
+            v_symlink="/home/${EFFECTIVE_USER}/${leaf}"
+        elif [[ "$raw_v_dir" =~ ^/([^/]+)$ ]]; then
+            v_vm_dir="$raw_v_dir"
+            v_symlink="/home/${EFFECTIVE_USER}/${BASH_REMATCH[1]}"
         else
-            echo "[ERROR] Invalid volume mapping in VOLUMES: '$token'" >&2
-            echo "        Expected syntax: /path/on/host:/path_in_vm[:ro|:rw]" >&2
+            echo "[ERROR] Invalid volume mapping '$token' in $source_name:" >&2
+            echo "        krunvm requires guest_path to be a direct root child (e.g. /workspace) or /home/ubuntu/<name>." >&2
             exit 1
         fi
-    done
-done <<< "$VOLUMES"
+
+        # Security Golden Rule: Never mount /, /home, or the entire user home directory
+        local real_host_dir
+        real_host_dir="$(realpath "$h_dir" 2>/dev/null || echo "$h_dir")"
+        if [[ "$real_host_dir" == "/" || "$real_host_dir" == "/home" || "$real_host_dir" == "$REAL_HOME" ]]; then
+            echo "[SECURITY ERROR] Refusing to mount host root or home directory ($real_host_dir) from $source_name." >&2
+            echo "                 Only dedicated project subfolders should be mounted." >&2
+            exit 1
+        fi
+
+        if [[ ! -d "$h_dir" ]]; then
+            mkdir -p "$h_dir" 2>/dev/null || true
+        fi
+
+        if [[ "$m_mode" == "ro" ]]; then
+            RO_MOUNTS+=("${v_vm_dir}")
+        fi
+        SYMLINKS+=("${v_vm_dir}:${v_symlink}")
+        PARSED_MOUNTS+=("${h_dir}:${v_vm_dir}:${m_mode}")
+    else
+        echo "[ERROR] Invalid volume mapping in $source_name: '$token'" >&2
+        echo "        Expected syntax: /path/on/host:/path_in_vm[:ro|:rw]" >&2
+        exit 1
+    fi
+}
+
+if [[ -f "$MAPPED_DIR_FILE" ]]; then
+    echo "==> Loading directory mounts from $MAPPED_DIR_FILE (docker-compose format)..."
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -z "$line" || "$line" =~ ^# ]] && continue
+        line="${line%%#*}"
+        line="$(echo "$line" | sed -e 's/[[:space:]]*$//')"
+        [[ -z "$line" ]] && continue
+
+        # Strip leading docker-compose yaml item indicator if present
+        line="${line#- }"
+        line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        # Strip wrapping quotes
+        line="${line%\"}"
+        line="${line#\"}"
+        line="${line%\'}"
+        line="${line#\'}"
+
+        validate_and_add_mount "$line" ".env.mapped_dir"
+    done < "$MAPPED_DIR_FILE"
+fi
+
+# Fallback to VOLUMES in ENV_FILE if .env.mapped_dir was absent or empty
+if [[ ${#PARSED_MOUNTS[@]} -eq 0 && -n "${VOLUMES:-}" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ -z "$line" || "$line" =~ ^# ]] && continue
+        line="${line%%#*}"
+        line="$(echo "$line" | sed -e 's/[[:space:]]*$//')"
+        [[ -z "$line" ]] && continue
+
+        for token in $line; do
+            validate_and_add_mount "$token" "VOLUMES"
+        done
+    done <<< "$VOLUMES"
+fi
 
 if [[ ${#PARSED_MOUNTS[@]} -eq 0 ]]; then
-    echo "[ERROR] No valid volume definitions found in 'VOLUMES'." >&2
+    echo "[ERROR] No valid volume definitions found in '$MAPPED_DIR_FILE' or 'VOLUMES'." >&2
+    echo "        Please define directory mappings in .env.mapped_dir or set VOLUMES in .env." >&2
     exit 1
 fi
 
-# Security Golden Rule: Never mount /, /home, or the entire user home directory
-REAL_HOME="$(realpath "$HOME" 2>/dev/null || echo "$HOME")"
+echo "==> Active volume mounts:"
 for mount_entry in "${PARSED_MOUNTS[@]}"; do
     IFS=':' read -r h_dir v_dir m_mode <<< "$mount_entry"
-    REAL_HOST_DIR="$(realpath "$h_dir" 2>/dev/null || echo "$h_dir")"
-
-    if [[ "$REAL_HOST_DIR" == "/" || "$REAL_HOST_DIR" == "/home" || "$REAL_HOST_DIR" == "$REAL_HOME" ]]; then
-        echo "[SECURITY ERROR] Refusing to mount host root or home directory ($REAL_HOST_DIR)." >&2
-        echo "                 Only dedicated project subfolders should be mounted." >&2
-        exit 1
-    fi
+    echo "    - $h_dir -> $v_dir ($m_mode)"
 done
 
 IFS=':' read -r PRIMARY_HOST_DIR PRIMARY_VM_DIR PRIMARY_MODE <<< "${PARSED_MOUNTS[0]}"
@@ -202,13 +253,23 @@ fi
 echo "==> Checking current status of persistent sandbox '$VM_NAME'..."
 VM_LIST="$("$KRUNVM_BIN" list 2>/dev/null || true)"
 
+MOUNT_FLAGS=()
+for mount_entry in "${PARSED_MOUNTS[@]}"; do
+    IFS=':' read -r h_dir v_dir m_mode <<< "$mount_entry"
+    MOUNT_FLAGS+=("-v" "${h_dir}:${v_dir}")
+done
+
 if echo "$VM_LIST" | grep -q "^${VM_NAME}[[:space:]]*$"; then
     if [[ "$RECREATE" == "true" ]]; then
         echo "==> Deleting existing microVM '$VM_NAME' for clean recreation (--recreate)..."
         "$KRUNVM_BIN" delete "$VM_NAME" >/dev/null 2>&1 || true
     else
         echo "==> Persistent sandbox '$VM_NAME' already exists in krunvm."
-        echo "    Tip: Run './setup.sh --recreate' to apply new volume mappings."
+        echo "==> Refreshing directory mappings via 'krunvm changevm'..."
+        "$KRUNVM_BIN" changevm "$VM_NAME" \
+            --workdir "$PRIMARY_VM_DIR" \
+            "${MOUNT_FLAGS[@]}" >/dev/null
+        echo "==> Volume mappings updated and refreshed successfully without data loss."
     fi
 fi
 
@@ -216,12 +277,6 @@ fi
 VM_LIST="$("$KRUNVM_BIN" list 2>/dev/null || true)"
 if ! echo "$VM_LIST" | grep -q "^${VM_NAME}[[:space:]]*$"; then
     echo "==> Creating persistent sandbox '$VM_NAME'..."
-    MOUNT_FLAGS=()
-    for mount_entry in "${PARSED_MOUNTS[@]}"; do
-        IFS=':' read -r h_dir v_dir m_mode <<< "$mount_entry"
-        MOUNT_FLAGS+=("-v" "${h_dir}:${v_dir}")
-    done
-
     "$KRUNVM_BIN" create \
         --name "$VM_NAME" \
         --cpus "$VM_CPUS" \
@@ -350,6 +405,6 @@ echo ""
 echo " 2. Verify Langfuse & OTEL Connectivity:"
 echo "    ./run_sandbox.sh test_connectivity"
 echo ""
-echo " 4. Install Antigravity CLI (on-demand):"
+echo " 3. Install Antigravity CLI (on-demand):"
 echo "    ./run_sandbox.sh install_agy"
 echo "=========================================================================="
