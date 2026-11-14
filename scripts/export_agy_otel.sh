@@ -146,6 +146,10 @@ elif is_otel_capable "$HOME/.gemini/antigravity-cli/hooks_env/.venv/bin/python3"
 # 3. Project-scoped venvs (if native and valid)
 elif is_otel_capable "${PWD}/.venv/bin/python3"; then
     PYTHON="${PWD}/.venv/bin/python3"
+elif is_otel_capable "${SCRIPT_DIR}/../../.venv/bin/python3"; then
+    PYTHON="${SCRIPT_DIR}/../../.venv/bin/python3"
+elif is_otel_capable "${SCRIPT_DIR}/../.venv/bin/python3"; then
+    PYTHON="${SCRIPT_DIR}/../.venv/bin/python3"
 elif is_otel_capable "${PWD}/apps/ai_service/.venv/bin/python3"; then
     PYTHON="${PWD}/apps/ai_service/.venv/bin/python3"
 # 4. Sandbox guest virtual environments (~/.venv or /var/venv or UV_PROJECT_ENVIRONMENT)
