@@ -80,3 +80,7 @@ backup/
 .antigravitycli/
 .antigravitycli/*.json
 .graphify_cache/
+
+
+**/.obsidian
+shared_dir_host_vm/

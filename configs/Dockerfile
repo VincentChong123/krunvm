@@ -91,12 +91,14 @@ USER root
 COPY scripts/export_agy_otel.sh /home/sandbox-runner/.gemini/antigravity-cli/scripts/export_agy_otel.sh
 COPY scripts/export_agy_otel_to_langfuse.py /home/sandbox-runner/.gemini/antigravity-cli/scripts/export_agy_otel_to_langfuse.py
 COPY scripts/get_active_agy_session.sh /home/sandbox-runner/.gemini/antigravity-cli/scripts/get_active_agy_session.sh
+COPY scripts/install_agy.sh /home/sandbox-runner/.gemini/antigravity-cli/scripts/install_agy.sh
 COPY scripts/test_connectivity.sh /home/sandbox-runner/.gemini/antigravity-cli/scripts/test_connectivity.sh
 COPY scripts/test_smoke.sh /home/sandbox-runner/.gemini/antigravity-cli/scripts/test_smoke.sh
 
 RUN chmod +x /home/sandbox-runner/.gemini/antigravity-cli/scripts/* && \
     ln -sf /home/sandbox-runner/.gemini/antigravity-cli/scripts/export_agy_otel.sh /usr/local/bin/export_agy_otel && \
     ln -sf /home/sandbox-runner/.gemini/antigravity-cli/scripts/get_active_agy_session.sh /usr/local/bin/get_active_agy_session && \
+    ln -sf /home/sandbox-runner/.gemini/antigravity-cli/scripts/install_agy.sh /usr/local/bin/install_agy && \
     ln -sf /home/sandbox-runner/.gemini/antigravity-cli/scripts/test_connectivity.sh /usr/local/bin/test_connectivity && \
     ln -sf /home/sandbox-runner/.gemini/antigravity-cli/scripts/test_smoke.sh /usr/local/bin/test_smoke && \
     chown -R sandbox-runner:sandbox-runner /home/sandbox-runner
