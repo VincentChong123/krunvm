@@ -137,11 +137,12 @@ fi
 # Install rootless user namespace auto-wrapper
 cat <<'EOF_WRAPPER' > "$PREFIX/bin/krunvm"
 #!/usr/bin/env bash
-export LD_LIBRARY_PATH="/home/vin/.local/lib64:/home/vin/.local/lib:${LD_LIBRARY_PATH:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LD_LIBRARY_PATH="/home/vin/.local/lib/x86_64-linux-gnu:/home/vin/.local/lib64:/home/vin/.local/lib:${LD_LIBRARY_PATH:-}"
 if [[ "${_CONTAINERS_USERNS_CONFIGURED:-}" != "done" ]]; then
     exec buildah unshare -- "$0" "$@"
 else
-    exec "$HOME/.local/bin/krunvm-bin" "$@"
+    exec "${SCRIPT_DIR}/krunvm-bin" "$@"
 fi
 EOF_WRAPPER
 chmod +x "$PREFIX/bin/krunvm"

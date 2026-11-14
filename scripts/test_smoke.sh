@@ -10,10 +10,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# 1. Resolve Environment & Credentials
+# 1. Resolve Environment & Credentials (SSOT: .env.sandbox or in-guest ~/.gemini/antigravity-cli/.env)
 ENV_FILE="${ENV_FILE:-}"
 if [ -z "$ENV_FILE" ]; then
-    for candidate in "${PWD}/.env" "${SCRIPT_DIR}/../.env" "$HOME/.gemini/antigravity-cli/.env"; do
+    for candidate in "${PWD}/.env.sandbox" "${SCRIPT_DIR}/../.env.sandbox" "$HOME/.gemini/antigravity-cli/.env" "${PWD}/.env" "${SCRIPT_DIR}/../.env"; do
         if [ -f "$candidate" ]; then
             ENV_FILE="$candidate"
             break

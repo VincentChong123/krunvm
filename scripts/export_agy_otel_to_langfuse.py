@@ -207,11 +207,19 @@ def export_step() -> None:
     if not is_stop_event and not export_on_tool:
         return
 
-    # 2. Resolve configuration from project root .env (or CWD .env)
-    dotenv_path = Path.cwd() / ".env"
-    if not dotenv_path.is_file():
-        dotenv_path = Path(__file__).resolve().parent.parent / ".env"
-    dotenv = load_env_file(dotenv_path)
+    # 2. Resolve configuration from project root .env.sandbox (or CWD / home .env)
+    candidates = [
+        Path.cwd() / ".env.sandbox",
+        Path(__file__).resolve().parent.parent / ".env.sandbox",
+        Path.home() / ".gemini/antigravity-cli/.env",
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parent.parent / ".env",
+    ]
+    dotenv = {}
+    for candidate in candidates:
+        if candidate.is_file():
+            dotenv = load_env_file(candidate)
+            break
 
     # Respect IS_LANGFUSE_ENABLED toggle
     is_enabled_str = os.environ.get("IS_LANGFUSE_ENABLED") or dotenv.get("IS_LANGFUSE_ENABLED")

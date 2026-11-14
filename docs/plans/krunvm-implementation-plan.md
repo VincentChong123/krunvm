@@ -107,6 +107,7 @@ Refactored from the 600-line Multipass script to leverage `krunvm`:
   - Notes/Reference data mounted as `:ro`.
   - Host master SSH keys, AWS/GCP credentials, and parent directories are completely inaccessible.
 - **Resource Clamping:** On a 16 GB machine, hard caps (`--cpus 4 --mem 4096`) prevent an autonomous agent runaway process from OOM-crashing the host workstation.
+- **Subagent Execution Model (In-VM Bubblewrap):** Subagents launched by Antigravity CLI are isolated inside the persistent microVM using native unprivileged **Bubblewrap (`bwrap`)** user namespaces (<5ms cold start, 0 MB memory overhead). Nested microVM instances are explicitly avoided to eliminate hypervisor nesting overhead and VM locking conflicts.
 
 ---
 

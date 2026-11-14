@@ -77,14 +77,19 @@ elif [ "${1:-}" = "--version" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 1. Environment Loading (CWD .env or local-infra langfuse .env as SSOT)
+# 1. Environment Loading (SSOT: .env.sandbox or in-guest ~/.gemini/antigravity-cli/.env)
 # ------------------------------------------------------------------------------
-ENV_FILE="${PWD}/.env"
-if [ ! -f "$ENV_FILE" ]; then
-    ENV_FILE="${SCRIPT_DIR}/../.env"
+ENV_FILE="${ENV_FILE:-}"
+if [ -z "$ENV_FILE" ]; then
+    for candidate in "${PWD}/.env.sandbox" "${SCRIPT_DIR}/../.env.sandbox" "$HOME/.gemini/antigravity-cli/.env" "${PWD}/.env" "${SCRIPT_DIR}/../.env"; do
+        if [ -f "$candidate" ]; then
+            ENV_FILE="$candidate"
+            break
+        fi
+    done
 fi
 
-if [ -f "$ENV_FILE" ]; then
+if [ -n "$ENV_FILE" ]; then
     set -a
     # shellcheck source=/dev/null
     . "$ENV_FILE"

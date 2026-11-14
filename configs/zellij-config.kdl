@@ -1,0 +1,2 @@
+default_layout "agy-dev"
+copy_on_select true

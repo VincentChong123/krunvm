@@ -9,17 +9,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 IMAGE_TAG="${1:-localhost/krun-agent-sandbox:latest}"
-CONTAINERFILE="${REPO_ROOT}/configs/Containerfile"
-
-if [[ ! -f "$CONTAINERFILE" ]]; then
-    echo "[ERROR] Containerfile not found at '$CONTAINERFILE'." >&2
+if [[ -f "${REPO_ROOT}/configs/Dockerfile" ]]; then
+    DOCKERFILE="${REPO_ROOT}/configs/Dockerfile"
+elif [[ -f "${REPO_ROOT}/configs/dockerfile" ]]; then
+    DOCKERFILE="${REPO_ROOT}/configs/dockerfile"
+elif [[ -f "${REPO_ROOT}/configs/Containerfile" ]]; then
+    DOCKERFILE="${REPO_ROOT}/configs/Containerfile"
+else
+    echo "[ERROR] Dockerfile not found at '${REPO_ROOT}/configs/Dockerfile'." >&2
     exit 1
 fi
 
 echo "=========================================================================="
 echo " Building Base OCI Sandbox Image"
 echo " Image Tag:     $IMAGE_TAG"
-echo " Containerfile: $CONTAINERFILE"
+echo " Dockerfile:    $DOCKERFILE"
 echo "=========================================================================="
 
 if command -v buildah >/dev/null 2>&1; then
@@ -37,13 +41,13 @@ fi
 echo "==> Using builder: $BUILD_TOOL..."
 case "$BUILD_TOOL" in
     buildah)
-        buildah bud -f "$CONTAINERFILE" -t "$IMAGE_TAG" "$REPO_ROOT"
+        buildah bud -f "$DOCKERFILE" -t "$IMAGE_TAG" "$REPO_ROOT"
         ;;
     podman)
-        podman build -f "$CONTAINERFILE" -t "$IMAGE_TAG" "$REPO_ROOT"
+        podman build -f "$DOCKERFILE" -t "$IMAGE_TAG" "$REPO_ROOT"
         ;;
     docker)
-        docker build -f "$CONTAINERFILE" -t "$IMAGE_TAG" "$REPO_ROOT"
+        docker build -f "$DOCKERFILE" -t "$IMAGE_TAG" "$REPO_ROOT"
         ;;
 esac
 
