@@ -9,14 +9,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 IMAGE_TAG="${1:-localhost/krun-agent-sandbox:latest}"
-if [[ -f "${REPO_ROOT}/configs/Dockerfile" ]]; then
+CUSTOM_FILE="${2:-${CONTAINERFILE:-${DOCKERFILE:-}}}"
+
+if [[ -n "$CUSTOM_FILE" && -f "$CUSTOM_FILE" ]]; then
+    DOCKERFILE="$CUSTOM_FILE"
+elif [[ -n "$CUSTOM_FILE" && -f "${REPO_ROOT}/${CUSTOM_FILE}" ]]; then
+    DOCKERFILE="${REPO_ROOT}/${CUSTOM_FILE}"
+elif [[ -f "${REPO_ROOT}/configs/Dockerfile" ]]; then
     DOCKERFILE="${REPO_ROOT}/configs/Dockerfile"
 elif [[ -f "${REPO_ROOT}/configs/dockerfile" ]]; then
     DOCKERFILE="${REPO_ROOT}/configs/dockerfile"
 elif [[ -f "${REPO_ROOT}/configs/Containerfile" ]]; then
     DOCKERFILE="${REPO_ROOT}/configs/Containerfile"
 else
-    echo "[ERROR] Dockerfile not found at '${REPO_ROOT}/configs/Dockerfile'." >&2
+    echo "[ERROR] Dockerfile or Containerfile not found." >&2
     exit 1
 fi
 
