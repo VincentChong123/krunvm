@@ -216,7 +216,6 @@ if [[ -z "$KRUNVM_BIN" ]]; then
     for candidate in \
         "$(command -v krunvm 2>/dev/null || true)" \
         "/usr/local/bin/krunvm" \
-        "/home/vin/.local/bin/krunvm" \
         "${HOME}/.local/bin/krunvm"; do
         if [[ -n "$candidate" && -x "$candidate" ]]; then
             KRUNVM_BIN="$candidate"
@@ -244,7 +243,7 @@ fi
 
 if [[ "$IMAGE_EXISTS" != "true" ]]; then
     echo "==> Base image '$OCI_BASE_IMAGE' not found locally. Building image..."
-    bash "${SCRIPT_DIR}/scripts/build_image.sh" "$OCI_BASE_IMAGE"
+    bash "${SCRIPT_DIR}/scripts/build_image.sh" "$OCI_BASE_IMAGE" "${CONTAINERFILE:-}"
 fi
 
 # ------------------------------------------------------------------------------

@@ -36,7 +36,6 @@ if [[ -z "$KRUNVM_EXEC" ]]; then
     for candidate in \
         "$(command -v krunvm 2>/dev/null || true)" \
         "/usr/local/bin/krunvm" \
-        "/home/vin/.local/bin/krunvm" \
         "${HOME}/.local/bin/krunvm"; do
         if [[ -n "$candidate" && -x "$candidate" ]]; then
             KRUNVM_EXEC="$candidate"
