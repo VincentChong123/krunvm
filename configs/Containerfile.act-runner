@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     tar \
     gzip \
+    e2fsprogs \
+    openssh-server \
     fuse-overlayfs \
     docker.io \
     docker-compose-v2 \
@@ -31,21 +33,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure Docker daemon for minimal microVM kernel (disable iptables and use fuse-overlayfs for CoW on virtiofs)
+# Configure Docker daemon with native overlay2 and disable iptables for microVM
 RUN mkdir -p /etc/docker && \
-    echo '{\n  "iptables": false,\n  "ip6tables": false,\n  "storage-driver": "fuse-overlayfs"\n}' > /etc/docker/daemon.json
+    echo '{\n  "iptables": false,\n  "ip6tables": false,\n  "storage-driver": "overlay2"\n}' > /etc/docker/daemon.json
 
 # Pre-configure act defaults to self-hosted mode for instant startup without container pull
 RUN echo "-P ubuntu-latest=-self-hosted" > /root/.actrc && \
     mkdir -p /home/ubuntu && \
     echo "-P ubuntu-latest=-self-hosted" > /home/ubuntu/.actrc
 
-# Install helper script to automatically ensure dockerd is running with fuse-overlayfs driver
+# Install helper script to automatically ensure dockerd is running with loopback ext4 / tmpfs storage
 RUN printf '#!/usr/bin/env bash\n\
+set -e\n\
+mkdir -p /var/lib/docker\n\
+if ! mountpoint -q /var/lib/docker; then\n\
+    if [ ! -f /docker-storage.img ]; then\n\
+        truncate -s 20G /docker-storage.img 2>/dev/null || true\n\
+        mkfs.ext4 -F /docker-storage.img 2>/dev/null || true\n\
+    fi\n\
+    mount -o loop,discard /docker-storage.img /var/lib/docker 2>/dev/null || mount -t tmpfs -o size=4G tmpfs /var/lib/docker\n\
+fi\n\
 if ! pgrep -x dockerd >/dev/null 2>&1; then\n\
     mkdir -p /etc/docker\n\
-    if [ ! -f /etc/docker/daemon.json ] || ! grep -q '\''"storage-driver": "fuse-overlayfs"'\'' /etc/docker/daemon.json 2>/dev/null; then\n\
-        echo '\''{"iptables":false,"ip6tables":false,"storage-driver":"fuse-overlayfs"}'\'' > /etc/docker/daemon.json\n\
+    if [ ! -f /etc/docker/daemon.json ] || ! grep -q '\''"storage-driver": "overlay2"'\'' /etc/docker/daemon.json 2>/dev/null; then\n\
+        echo '\''{"iptables":false,"ip6tables":false,"storage-driver":"overlay2"}'\'' > /etc/docker/daemon.json\n\
     fi\n\
     dockerd >/var/log/dockerd.log 2>&1 &\n\
     for _ in $(seq 1 30); do\n\

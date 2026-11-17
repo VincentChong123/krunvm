@@ -61,6 +61,6 @@ fi
 
 # In-VM runner command:
 # Note: Must be a single line because libkrun appends arguments to the Linux kernel cmdline.
-VM_COMMAND='command -v ensure-dockerd.sh >/dev/null 2>&1 && sudo ensure-dockerd.sh || ( pgrep -x dockerd >/dev/null 2>&1 || ( [ -f /etc/docker/daemon.json ] && grep -q fuse-overlayfs /etc/docker/daemon.json || sudo sh -c "echo '\''{\"iptables\":false,\"ip6tables\":false,\"storage-driver\":\"fuse-overlayfs\"}'\'' > /etc/docker/daemon.json" && sudo dockerd >/var/log/dockerd.log 2>&1 & sleep 2 ) ); cd /workspace && exec act workflow_dispatch -W /workspace/.github/workflows/ci.yml -P ubuntu-latest=-self-hosted --env ACT=true "$@"'
+VM_COMMAND='command -v ensure-dockerd.sh >/dev/null 2>&1 && sudo ensure-dockerd.sh || ( pgrep -x dockerd >/dev/null 2>&1 || ( [ -f /etc/docker/daemon.json ] && grep -q overlay2 /etc/docker/daemon.json || sudo sh -c "echo '\''{\"iptables\":false,\"ip6tables\":false,\"storage-driver\":\"overlay2\"}'\'' > /etc/docker/daemon.json" && sudo dockerd >/var/log/dockerd.log 2>&1 & sleep 2 ) ); cd /workspace && exec act workflow_dispatch -W /workspace/.github/workflows/ci.yml -P ubuntu-latest=-self-hosted --env ACT=true "$@"'
 
 exec "$KRUNVM_EXEC" start "$VM_NAME" /bin/bash -- -c "$VM_COMMAND" bash "$@"
