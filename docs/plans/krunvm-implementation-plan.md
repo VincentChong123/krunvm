@@ -1,8 +1,8 @@
 # Implementation Plan: krunvm Agent-Isolated Sandbox with Host Langfuse OTEL Integration
 
-**Target Repository:** [`Vincentchong123/krunvm`](file:///home/vin/ws/20_projects/21_github/Vincentchong123/krunvm)  
-**Reference Architecture:** [`Vincentchong123/multipass`](file:///home/vin/ws/20_projects/21_github/Vincentchong123/multipass)  
-**Host Environment:** 16 GB RAM, 8 Cores, Ubuntu 26.04 LTS  
+**Target Repository:** [`Vincentchong123/krunvm`](https://github.com/Vincentchong123/krunvm)
+**Reference Architecture:** [`Vincentchong123/multipass`](https://github.com/Vincentchong123/multipass)
+**Host Environment:** 16 GB RAM, 8 Cores, Ubuntu 26.04 LTS
 
 ---
 
@@ -10,7 +10,7 @@
 
 > [!WARNING]
 > ### ⚠️ DevOps Architectural Warning: Managing MicroVM Drift & Build Isolation
-> - **Avoid Local Absolute Paths:** All mount paths and binary resolutions must reference project-relative roots or standard Linux environment variables (`$HOME`, `$XDG_RUNTIME_DIR`), avoiding hardcoded `/home/vin/...` paths in tracked configs.
+> - **Avoid Local Absolute Paths:** All mount paths and binary resolutions must reference project-relative roots or standard Linux environment variables (`$HOME`, `$XDG_RUNTIME_DIR`), avoiding hardcoded `/home/<user>/...` paths in tracked configs.
 > - **Immutable Base Images vs. Mutable Shell Drifts:** In Multipass, provisioning relied on Cloud-Init modifying a running VM. In `krunvm`, we must adhere to **Twelve-Factor App and immutable container principles**: the guest OS, tools (`uv`, Python, headless browser dependencies), and OTEL exporters are baked into an immutable OCI image via `buildah`, while only mutable project workspaces are mounted at runtime.
 > - **Decoupled Secret Boundaries:** Never mount host `.env` or master developer credentials into the microVM. Maintain strict separation between `.env.host` (orchestrator settings) and `.env.sandbox` (ephemeral agent tokens).
 
@@ -24,7 +24,7 @@
 ## 2. Target Repository Architecture
 
 ```text
-/home/vin/ws/20_projects/21_github/Vincentchong123/krunvm/
+├── workspace/            # Project root
 ├── .agents/
 │   ├── hooks.json                      # Antigravity CLI PostToolUse & Stop OTEL export hooks
 │   └── plans/                          # Agent decision logs & execution manifests
@@ -139,7 +139,7 @@ flowchart TD
 - Author `scripts/build_image.sh` to deterministically compile the OCI image using `buildah`.
 
 ### Phase 3: krunvm Provisioning Engine
-- Port the robust pre-flight guards from [`setup.sh`](file:///home/vin/ws/20_projects/21_github/Vincentchong123/multipass/setup.sh):
+- Port the robust pre-flight guards from `setup.sh`:
   - Security root mount check.
   - Out-of-tree symlink detector.
   - Volume mount parser (`host:guest[:ro|:rw]`).

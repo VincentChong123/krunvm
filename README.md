@@ -329,7 +329,7 @@ Verify that in-microVM requests route over TSI to host Langfuse (`:3100`) and Op
 
 ## Security & Blast Radius Controls
 
-1. **Host Process Isolation (`sandbox-runner`):** The hypervisor runtime and rootless container layers execute under the dedicated `sandbox-runner` system account (UID 997, GID `kvm`). POSIX ACLs strictly delimit filesystem access to mounted project directories, preventing access to the developer's home directory (`/home/vin`), SSH keys, or cloud credentials.
+1. **Host Process Isolation (`sandbox-runner`):** The hypervisor runtime and rootless container layers execute under the dedicated `sandbox-runner` system account (UID 997, GID `kvm`). POSIX ACLs strictly delimit filesystem access to mounted project directories, preventing access to the developer's home directory (`$HOME`), SSH keys, or cloud credentials.
 2. **Hardware Virtualization:** MicroVM processes run under Linux KVM with a dedicated minimal kernel (`libkrunfw`), eliminating container-breakout risks to the host kernel.
 3. **Mount Guardrails & Read-Only Protection:** `setup.sh` strictly forbids mounting host root (`/`), `/home`, or `$HOME`. Sensitive repositories (`/krunvm`, notes) are enforced as **Read-Only (`:ro`)** via Linux kernel bind-remounts, preventing the agent from modifying its own harness.
 4. **Decoupled Secrets:** Master host credentials remain on the host; only scoped agent tokens defined in `.env.sandbox` are injected into `/home/ubuntu/.gemini/antigravity-cli/.env`.

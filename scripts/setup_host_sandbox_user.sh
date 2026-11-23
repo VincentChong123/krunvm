@@ -3,7 +3,7 @@
 # setup_host_sandbox_user.sh - Provision Dedicated Sandbox User & ACL Permissions
 # ==============================================================================
 # 1. Creates dedicated host user 'sandbox-runner' (with /dev/kvm access).
-# 2. Applies traversal ACLs on parent paths (/home/vin/...).
+# 2. Applies traversal ACLs on parent paths ($HOME/...).
 # 3. Grants bidirectional read/write ACLs on mapped RW volumes.
 # 4. Grants read-only ACLs on mapped RO volumes.
 # 5. Configures iptables rule blocking loopback SSH (port 22) for sandbox-runner.
@@ -22,7 +22,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 SANDBOX_USER="${1:-sandbox-runner}"
-PRIMARY_USER="${SUDO_USER:-$(logname 2>/dev/null || echo "vin")}"
+PRIMARY_USER="${SUDO_USER:-$(logname 2>/dev/null || id -un 2>/dev/null || echo "ubuntu")}"
 
 echo "=========================================================================="
 echo " Setting up Dedicated Host Sandbox User: '$SANDBOX_USER'"

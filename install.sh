@@ -238,5 +238,3 @@ else
     # Run standard configuration and absorb non-fatal soft warning exits
     "$BINARY_PATH" install || true
 fi
-
-

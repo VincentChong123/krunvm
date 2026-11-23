@@ -83,4 +83,7 @@ backup/
 
 
 **/.obsidian
-shared_dir_host_vm/
+shared_dir_host_vm/*
+!shared_dir_host_vm/ssh/
+!shared_dir_host_vm/vm2host/
+!shared_dir_host_vm/plans/

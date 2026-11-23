@@ -1,7 +1,7 @@
 # Architectural Comparison & Migration Evaluation: Canonical Multipass vs. krunvm + Bubblewrap (bwrap)
 
-**Target Environment:** 16 GB RAM, 8-Core CPU, Ubuntu 26.04 LTS  
-**Source Repository:** [`Vincentchong123/multipass`](file:///home/vin/ws/20_projects/21_github/Vincentchong123/multipass)  
+**Target Environment:** 16 GB RAM, 8-Core CPU, Ubuntu 26.04 LTS
+**Source Repository:** [`Vincentchong123/multipass`](https://github.com/Vincentchong123/multipass)
 **Target Architecture:** Hybrid Two-Tier: `krunvm` (Hardware KVM Outer Perimeter) + `bwrap` (Zero-Overhead Subagent Sandboxing)
 
 ---
@@ -120,8 +120,8 @@ Migrating from the Multipass engine to `krunvm` + `bwrap` requires the following
 
 | Existing Component | Status | Required Replacement / Migration Action |
 | :--- | :--- | :--- |
-| [`setup.yaml`](file:///home/vin/ws/20_projects/21_github/Vincentchong123/multipass/setup.yaml) | **Obsolete** | Replaced with an OCI `Containerfile` built using `buildah`. |
-| [`setup.sh`](file:///home/vin/ws/20_projects/21_github/Vincentchong123/multipass/setup.sh) | **Refactored** | Replaces Multipass commands with `krunvm create`, single-depth volume normalizer, and `/home/ubuntu` symlinks. |
+| `setup.yaml` | **Obsolete** | Replaced with an OCI `Containerfile` built using `buildah`. |
+| `setup.sh` | **Refactored** | Replaces Multipass commands with `krunvm create`, single-depth volume normalizer, and `/home/ubuntu` symlinks. |
 | `.env.host` / `.env` | **Parity** | Fully preserved hierarchical model (`.env.host`, `.env`, `.env.example`, `.env.sandbox`, `.env.sandbox.example`). |
 | `multipass-ro-mounts.service` | **Replaced** | Enforced via in-guest Linux kernel bind-remounts (`mount --bind "$d" "$d" && mount -o remount,ro,bind "$d"`). |
 | Host Telemetry Bridge | **Simplified** | Guest connects directly to `http://127.0.0.1:3100` via TSI, avoiding gateway IP lookups. |
