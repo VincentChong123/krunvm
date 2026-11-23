@@ -43,38 +43,55 @@ fi
 EOF
 fi
 
-# 3. Apply Git Configuration & Hooks
+# 3. Apply Git Configuration, Hooks & Pre-commit
 if [ -f "$DOTFILES_SRC/dot_gitconfig" ]; then
     cp -f "$DOTFILES_SRC/dot_gitconfig" "${TARGET_HOME}/.gitconfig"
 fi
-if [ -d "$DOTFILES_SRC/dot_config/git/hooks" ]; then
+if [ -d "$DOTFILES_SRC/dot_config/git" ]; then
     mkdir -p "${TARGET_HOME}/.config/git"
-    cp -rf "$DOTFILES_SRC/dot_config/git/hooks" "${TARGET_HOME}/.config/git/"
-    chmod +x "${TARGET_HOME}/.config/git/hooks/"* 2>/dev/null || true
+    [ -f "$DOTFILES_SRC/dot_config/git/dot_commitlintrc.json" ] && cp -f "$DOTFILES_SRC/dot_config/git/dot_commitlintrc.json" "${TARGET_HOME}/.config/git/.commitlintrc.json"
+    if [ -d "$DOTFILES_SRC/dot_config/git/hooks" ]; then
+        cp -rf "$DOTFILES_SRC/dot_config/git/hooks" "${TARGET_HOME}/.config/git/"
+        chmod +x "${TARGET_HOME}/.config/git/hooks/"* 2>/dev/null || true
+    fi
+fi
+if [ -d "$DOTFILES_SRC/dot_config/pre-commit" ]; then
+    mkdir -p "${TARGET_HOME}/.config/pre-commit"
+    [ -f "$DOTFILES_SRC/dot_config/pre-commit/config.yaml" ] && cp -f "$DOTFILES_SRC/dot_config/pre-commit/config.yaml" "${TARGET_HOME}/.config/pre-commit/"
+    [ -f "$DOTFILES_SRC/dot_config/pre-commit/dot_yamllint" ] && cp -f "$DOTFILES_SRC/dot_config/pre-commit/dot_yamllint" "${TARGET_HOME}/.config/pre-commit/.yamllint"
+    if [ -d "$DOTFILES_SRC/dot_config/pre-commit/dot_trufflehog" ]; then
+        cp -rf "$DOTFILES_SRC/dot_config/pre-commit/dot_trufflehog" "${TARGET_HOME}/.config/pre-commit/.trufflehog"
+    fi
 fi
 
 # 4. Apply Bash Shell & Aliases SSOT
 if [ -f "$DOTFILES_SRC/dot_bashrc" ]; then
     cp -f "$DOTFILES_SRC/dot_bashrc" "${TARGET_HOME}/.bashrc"
 elif [ -f "$DOTFILES_SRC/dot_zshrc" ]; then
-    if ! grep -q "pc-check()" "${TARGET_HOME}/.bashrc" 2>/dev/null; then
-        cat << 'EOF' >> "${TARGET_HOME}/.bashrc"
+    sed -i '/--- Centralized Shell Aliases from Dotfiles SSOT ---/,/alias precommit-check=pc-check/d' "${TARGET_HOME}/.bashrc" 2>/dev/null || true
+    cat << 'EOF' >> "${TARGET_HOME}/.bashrc"
 
 # --- Centralized Shell Aliases from Dotfiles SSOT ---
 alias agy-yolo="agy --dangerously-skip-permissions --sandbox"
 
 pc-check() {
-    local infra_dir="${HOME}/ws/github/winwinteam/local-infra"
-    if [ -d "/local-infra" ]; then
-        infra_dir="/local-infra"
+    local central_dir="${HOME}/.config/pre-commit"
+    [[ ! -d "$central_dir" && -d "${XDG_CONFIG_HOME:-}/pre-commit" ]] && central_dir="${XDG_CONFIG_HOME}/pre-commit"
+    local cfg=".pre-commit-config.yaml"
+    if [ ! -f "$cfg" ]; then
+        cfg="${central_dir}/config.yaml"
     fi
-    local cfg="${infra_dir}/.pre-commit-config.yaml"
-    local truffle="${infra_dir}/.trufflehog"
-    local temp_link=0
 
-    if [ ! -d ".trufflehog" ] && [ -d "$truffle" ]; then
-        ln -s "$truffle" .trufflehog
-        temp_link=1
+    local temp_truffle=0
+    if [ ! -d ".trufflehog" ] && [ -d "${central_dir}/.trufflehog" ]; then
+        ln -s "${central_dir}/.trufflehog" .trufflehog
+        temp_truffle=1
+    fi
+
+    local temp_yamllint=0
+    if [ ! -f ".yamllint" ] && [ -f "${central_dir}/.yamllint" ]; then
+        ln -s "${central_dir}/.yamllint" .yamllint
+        temp_yamllint=1
     fi
 
     local exit_code=0
@@ -86,16 +103,14 @@ pc-check() {
         exit_code=$?
     fi
 
-    if [ "$temp_link" -eq 1 ]; then
-        rm -f .trufflehog
-    fi
+    [ "$temp_truffle" -eq 1 ] && rm -f .trufflehog
+    [ "$temp_yamllint" -eq 1 ] && rm -f .yamllint
 
     return $exit_code
 }
 alias pc-all="pc-check --all-files"
 alias precommit-check=pc-check
 EOF
-    fi
 fi
 
 echo "    [OK] Shell completion, dotfiles and git configuration synchronized."
