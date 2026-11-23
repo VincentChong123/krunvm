@@ -1,6 +1,7 @@
 # EditorConfig is awesome: https://EditorConfig.org
 root = true
 
+# Top-level default settings for all files
 [*]
 charset = utf-8
 end_of_line = lf
@@ -9,11 +10,42 @@ indent_style = space
 indent_size = 4
 trim_trailing_whitespace = true
 
-[*.{yaml,yml,json}]
-indent_size = 2
-
-[*.sh]
+# Shell scripts (POSIX, Bash)
+[*.{sh,bash}]
+indent_style = space
 indent_size = 4
 
+# Python files (PEP 8)
+[*.py]
+indent_style = space
+indent_size = 4
+
+# C / C++ source and headers
+[*.{c,h,cpp,hpp}]
+indent_style = space
+indent_size = 4
+
+# YAML configurations (CI/CD, Compose, Pre-commit)
+[*.{yaml,yml}]
+indent_style = space
+indent_size = 2
+
+# JSON configuration files
+[*.json]
+indent_style = space
+indent_size = 2
+
+# Container and Docker build specifications
+[{Containerfile*,Dockerfile*,*.dockerfile}]
+indent_style = space
+indent_size = 4
+
+# Makefiles (strictly requires tabs for recipe indentation)
+[Makefile]
+indent_style = tab
+
+# Markdown documentation (preserve trailing whitespace for markdown line breaks)
 [*.md]
+indent_style = space
+indent_size = 2
 trim_trailing_whitespace = false

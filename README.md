@@ -197,7 +197,7 @@ flowchart TD
 ### 1. Host Prerequisites
 Run the pre-flight check to verify your Linux KVM permissions and build tools:
 ```bash
-./scripts/check_prerequisites.sh
+./shared_dir_host_vm/scripts/check_prerequisites.sh
 ```
 
 If missing system dependencies are reported, install them:
@@ -209,7 +209,7 @@ sudo apt update && sudo apt install -y \
 ### 2. Build krunvm for Your Host
 Compile `libkrunfw`, `libkrun`, and `krunvm` from source directly into `~/.local`:
 ```bash
-./scripts/build_krunvm_host.sh
+./shared_dir_host_vm/scripts/build_krunvm_host.sh
 ```
 
 Ensure your `~/.bashrc` includes the installation prefix:
@@ -221,7 +221,7 @@ export LD_LIBRARY_PATH="$HOME/.local/lib:$LD_LIBRARY_PATH"
 ### 3. Build the Base OCI Image
 Build the hardened agent sandbox base image via Buildah:
 ```bash
-./scripts/build_image.sh
+./shared_dir_host_vm/scripts/build_image.sh
 ```
 
 ### 4. Configure & Provision the Environment

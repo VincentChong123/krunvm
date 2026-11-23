@@ -185,6 +185,20 @@ sed -i '\|ensure-sshd\.sh|d' /etc/bash.bashrc 2>/dev/null || true
 echo '[ -x /shared_dir_host_vm/ssh/ensure-sshd.sh ] && /shared_dir_host_vm/ssh/ensure-sshd.sh >/dev/null 2>&1 || true' >> /etc/bash.bashrc
 echo "    [OK] Registered /shared_dir_host_vm/ssh/ensure-sshd.sh in /etc/bash.bashrc."
 
+# Register link_vm_workspace.sh hook to ensure workspace symlinks stay in sync
+if [ -x /shared_dir_host_vm/scripts/link_vm_workspace.sh ]; then
+    /shared_dir_host_vm/scripts/link_vm_workspace.sh >/dev/null 2>&1 || true
+    sed -i '\|link_vm_workspace\.sh|d' /etc/bash.bashrc 2>/dev/null || true
+    echo '[ -x /shared_dir_host_vm/scripts/link_vm_workspace.sh ] && /shared_dir_host_vm/scripts/link_vm_workspace.sh >/dev/null 2>&1 || true' >> /etc/bash.bashrc
+    echo "    [OK] Registered /shared_dir_host_vm/scripts/link_vm_workspace.sh in /etc/bash.bashrc."
+fi
+
+# Apply dotfiles from read-only mount (/dotfiles)
+if [ -x /shared_dir_host_vm/scripts/apply_dotfiles.sh ]; then
+    /shared_dir_host_vm/scripts/apply_dotfiles.sh >/dev/null 2>&1 || true
+    echo "    [OK] Synchronized dotfiles from read-only /dotfiles mount."
+fi
+
 # 7. Start / Restart sshd daemon reliably (single instance, detached session, AF_TSI-aware check)
 echo "==> [7/7] Starting SSH daemon and verifying AF_TSI listener..."
 pkill -9 -x sshd 2>/dev/null || true
@@ -230,7 +244,7 @@ echo "=========================================================="
 echo " [SUCCESS] MicroVM is now ready for VS Code Remote-SSH!"
 echo "=========================================================="
 echo "Next step on Host PC:"
-echo "  1. Run: /home/vin/ws/github/VincentChong123/krunvm/shared_dir_host_vm/vm2host/setup_host_vscode_ssh.sh"
-echo "  2. Run: /home/vin/ws/github/VincentChong123/krunvm/shared_dir_host_vm/vm2host/test_host_to_vm_ssh.sh"
+echo "  1. Run: ./shared_dir_host_vm/vm2host/setup_host_vscode_ssh.sh"
+echo "  2. Run: ./shared_dir_host_vm/vm2host/test_host_to_vm_ssh.sh"
 echo "  3. Connect in VS Code: Ctrl+Shift+P -> 'Remote-SSH: Connect to Host...' -> krun-act-runner"
 echo "=========================================================="

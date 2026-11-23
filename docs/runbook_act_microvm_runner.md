@@ -75,28 +75,28 @@ Use the helper script `scripts/run_act_vm.sh` to trigger runs seamlessly:
 
 ### Fast Linting (Commitlint)
 ```bash
-./scripts/run_act_vm.sh -j lint-commits
+./shared_dir_host_vm/scripts/run_act_vm.sh -j lint-commits
 ```
 
 ### Langfuse Stack Smoke Test
 ```bash
-./scripts/run_act_vm.sh -j test-langfuse-stack
+./shared_dir_host_vm/scripts/run_act_vm.sh -j test-langfuse-stack
 ```
 
 ### HyperDX + Grafana Smoke Test
 ```bash
-./scripts/run_act_vm.sh -j test-hyperdx-stack
+./shared_dir_host_vm/scripts/run_act_vm.sh -j test-hyperdx-stack
 ```
 
 ### Full CI Workflow Execution
 ```bash
-./scripts/run_act_vm.sh
+./shared_dir_host_vm/scripts/run_act_vm.sh
 ```
 
 ### Interactive Shell
 If you need to debug or inspect the in-VM environment directly:
 ```bash
-./scripts/run_act_vm.sh shell
+./shared_dir_host_vm/scripts/run_act_vm.sh shell
 ```
 
 ---

@@ -6,7 +6,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$SCRIPT_DIR"
+while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/setup.sh" && ! -d "$REPO_ROOT/.git" && ! -f "$REPO_ROOT/.env" && ! -f "$REPO_ROOT/.env.act" ]]; do
+    REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+if [[ ! -f "$REPO_ROOT/setup.sh" && ! -d "$REPO_ROOT/.git" && ! -f "$REPO_ROOT/.env" && ! -f "$REPO_ROOT/.env.act" ]]; then
+    REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
 
 IMAGE_TAG="${1:-localhost/krun-agent-sandbox:latest}"
 CUSTOM_FILE="${2:-${CONTAINERFILE:-${DOCKERFILE:-}}}"

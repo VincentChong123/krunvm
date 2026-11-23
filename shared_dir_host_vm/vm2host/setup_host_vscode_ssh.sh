@@ -3,7 +3,7 @@
 # setup_host_vscode_ssh.sh - Configure Host PC for VS Code Remote-SSH to krunvm
 #
 # LOCATION ON HOST PC:
-#   /home/vin/ws/github/VincentChong123/krunvm/shared_dir_host_vm/vm2host/setup_host_vscode_ssh.sh
+#   shared_dir_host_vm/vm2host/setup_host_vscode_ssh.sh
 #
 # PURPOSE:
 #   This script MUST be executed on the Host PC (NOT inside the krunvm VM).
@@ -38,7 +38,7 @@ echo "=================================================================="
 if [ -f /init.krun ] || grep -q "tsi_hijack" /proc/cmdline 2>/dev/null; then
     echo "[ERROR] Detected krunvm guest environment (/init.krun or tsi_hijack)." >&2
     echo "        Please run this script on your Host PC at:" >&2
-    echo "        /home/vin/ws/github/VincentChong123/krunvm/shared_dir_host_vm/vm2host/setup_host_vscode_ssh.sh" >&2
+    echo "        ./shared_dir_host_vm/vm2host/setup_host_vscode_ssh.sh" >&2
     exit 1
 fi
 
@@ -122,18 +122,24 @@ chmod 600 "${SSH_CONFIG}"
 
 # ------------------------------------------------------------------------------
 # Step 4: Configure VS Code User settings.json for krunvm Remote-SSH
+# Supports both native VS Code and Fedora Flatpak (com.visualstudio.code)
 # ------------------------------------------------------------------------------
-echo "==> [3/5] Updating VS Code settings (~/.config/Code/User/settings.json)..."
-VSCODE_SETTINGS_DIR="${HOME}/.config/Code/User"
-VSCODE_SETTINGS_FILE="${VSCODE_SETTINGS_DIR}/settings.json"
-mkdir -p "${VSCODE_SETTINGS_DIR}"
+echo "==> [3/5] Updating VS Code settings..."
+TARGET_SETTINGS_DIRS=(
+    "${HOME}/.config/Code/User"
+    "${HOME}/.var/app/com.visualstudio.code/config/Code/User"
+)
 
-if [ -f "${VSCODE_SETTINGS_FILE}" ]; then
-    cp -f "${VSCODE_SETTINGS_FILE}" "${VSCODE_SETTINGS_FILE}.bak.$(date +%Y%m%d_%H%M%S)"
-fi
+for VSCODE_SETTINGS_DIR in "${TARGET_SETTINGS_DIRS[@]}"; do
+    if [ -d "$(dirname "${VSCODE_SETTINGS_DIR}")" ] || [ -d "${VSCODE_SETTINGS_DIR}" ]; then
+        mkdir -p "${VSCODE_SETTINGS_DIR}"
+        VSCODE_SETTINGS_FILE="${VSCODE_SETTINGS_DIR}/settings.json"
 
-# Update settings.json safely (handling empty/missing file or trailing commas)
-python3 - "${VSCODE_SETTINGS_FILE}" << 'PYEOF'
+        if [ -f "${VSCODE_SETTINGS_FILE}" ]; then
+            cp -f "${VSCODE_SETTINGS_FILE}" "${VSCODE_SETTINGS_FILE}.bak.$(date +%Y%m%d_%H%M%S)"
+        fi
+
+        python3 - "${VSCODE_SETTINGS_FILE}" << 'PYEOF'
 import json
 import os
 import re
@@ -148,7 +154,6 @@ if os.path.exists(settings_path) and os.path.getsize(settings_path) > 0:
     try:
         data = json.loads(raw)
     except Exception:
-        # Strip simple // comments and trailing commas if present in VS Code JSONC
         cleaned = re.sub(r"(?m)^\s*//.*$", "", raw)
         cleaned = re.sub(r",(\s*[}\]])", r"\1", cleaned)
         try:
@@ -157,17 +162,15 @@ if os.path.exists(settings_path) and os.path.getsize(settings_path) > 0:
             print(f"    [WARN] Could not parse existing {settings_path} ({e}); leaving file untouched.")
             sys.exit(0)
 
-# Set platform so VS Code skips extra platform-detection SSH round-trips
 remote_platforms = data.get("remote.SSH.remotePlatform")
 if not isinstance(remote_platforms, dict):
     remote_platforms = {}
 remote_platforms["krun-act-runner"] = "linux"
 data["remote.SSH.remotePlatform"] = remote_platforms
 
-# Enable Unix domain socket forwarding as primary transport (bypasses TCP completely)
-# Note: Even if TCP (--port=0) is used, libkrun_tsi_fix.so inside the VM now fixes TCP port=0 too!
 data["remote.SSH.remoteServerListenOnSocket"] = True
 data["remote.SSH.connectTimeout"] = 60
+data["remote.SSH.useExecServer"] = False
 
 with open(settings_path, "w", encoding="utf-8") as f:
     json.dump(data, f, indent=4)
@@ -175,6 +178,8 @@ with open(settings_path, "w", encoding="utf-8") as f:
 
 print(f"    [OK] Updated VS Code Remote-SSH settings in {settings_path}.")
 PYEOF
+    fi
+done
 
 # ------------------------------------------------------------------------------
 # Step 5: Clean up any stale local SSH mux/forwarding processes to 127.0.0.1:2222
