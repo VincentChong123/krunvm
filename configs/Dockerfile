@@ -7,7 +7,7 @@ FROM ubuntu:24.04
 
 # Prevent interactive prompts during apt operations
 ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Etc/UTC
+ENV TZ=Asia/Singapore
 
 # Install core utilities and Python 3 runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     iproute2 \
     sudo \
+    tzdata \
     python3 \
     python3-venv \
     python3-pip \
@@ -29,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fuse-overlayfs \
     podman-docker \
     podman-compose \
+    && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure Git to trust all mounted host workspaces (prevents dubious ownership errors)
