@@ -1,0 +1,243 @@
+# Local krunvm (5.8 GiB RAM, 0 swap, tsi_hijack kernel) overlay:
+#   1. Memory tuning for the 5.8 GiB VM.
+#   2. Static IPs + /etc/hosts entries because this krunvm kernel lacks the
+#      iptables/nf_nat DNAT extensions that Docker's embedded DNS (127.0.0.11)
+#      needs to redirect port 53 to its ephemeral port.
+#   3. Explicit interface-IP bind addresses (instead of 0.0.0.0) so libkrun's
+#      tsi_hijack does not intercept server sockets onto the outer host stack.
+#   4. Netty NIO transport (noNative) so edge-triggered EPOLLET sockets do not
+#      stall on libkrun tsi_hijack fallback sockets.
+# Automatically merged by `docker compose` without modifying compose.yaml.
+
+x-default-hosts: &default-hosts
+  - "kafka:172.28.0.10"
+  - "zookeeper:172.28.0.11"
+  - "fluss-coordinator:172.28.0.12"
+  - "fluss-tablet:172.28.0.13"
+  - "flink-jobmanager:172.28.0.14"
+  - "flink-taskmanager:172.28.0.15"
+  - "flink-sql-gateway:172.28.0.16"
+  - "demo-app:172.28.0.17"
+
+x-python-exec-hosts: &python-exec-hosts
+  - "fluss-coordinator:172.29.0.12"
+  - "fluss-tablet:172.29.0.13"
+  - "demo-app:172.29.0.17"
+  - "python-runner:172.29.0.19"
+
+services:
+  kafka:
+    hostname: kafka
+    environment:
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx384m
+      KAFKA_LISTENERS: PLAINTEXT://172.28.0.10:9092,CONTROLLER://172.28.0.10:9093
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1"]
+    extra_hosts: *default-hosts
+    networks:
+      default:
+        ipv4_address: 172.28.0.10
+
+  zookeeper:
+    hostname: zookeeper
+    environment:
+      JVMFLAGS: -Xms64m -Xmx128m
+      ZOO_SERVERS: "server.1=172.28.0.11:2888:3888;172.28.0.11:2181"
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc -w 2 zookeeper 2181 | grep -q imok"]
+    extra_hosts: *default-hosts
+    networks:
+      default:
+        ipv4_address: 172.28.0.11
+
+  fluss-coordinator:
+    hostname: fluss-coordinator
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m -XX:+ExitOnOutOfMemoryError -Dorg.apache.fluss.shaded.netty4.io.netty.transport.noNative=true -Dio.netty.transport.noNative=true
+      FLUSS_PROPERTIES: |
+        zookeeper.address: zookeeper:2181
+        bind.listeners: FLUSS://172.28.0.12:9123,PYEXEC://172.29.0.12:9124
+        advertised.listeners: FLUSS://fluss-coordinator:9123,PYEXEC://fluss-coordinator:9124
+        internal.listener.name: FLUSS
+        remote.data.dir: /fluss/remote-data
+        default.replication.factor: 1
+        default.bucket.number: 1
+    extra_hosts: *default-hosts
+    networks:
+      default:
+        ipv4_address: 172.28.0.12
+      python-exec:
+        ipv4_address: 172.29.0.12
+
+  fluss-tablet:
+    hostname: fluss-tablet
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms128m -Xmx384m -XX:+ExitOnOutOfMemoryError -Dorg.apache.fluss.shaded.netty4.io.netty.transport.noNative=true -Dio.netty.transport.noNative=true
+      FLUSS_PROPERTIES: |
+        zookeeper.address: zookeeper:2181
+        bind.listeners: FLUSS://172.28.0.13:9123,PYEXEC://172.29.0.13:9124
+        advertised.listeners: FLUSS://fluss-tablet:9123,PYEXEC://fluss-tablet:9124
+        internal.listener.name: FLUSS
+        tablet-server.id: 0
+        data.dir: /fluss/data
+        remote.data.dir: /fluss/remote-data
+        kv.snapshot.interval: 30s
+    extra_hosts: *default-hosts
+    networks:
+      default:
+        ipv4_address: 172.28.0.13
+      python-exec:
+        ipv4_address: 172.29.0.13
+
+  flink-jobmanager:
+    hostname: flink-jobmanager
+    # EmbeddedExecutor (used by POST /jars/:id/run) connects to BlobServer via 127.0.0.1:6124,
+    # while jobmanager.bind-host must stay 172.28.0.14 for krunvm tsi_hijack. Forward loopback
+    # 127.0.0.1:6124 -> 172.28.0.14:6124 before exec'ing Flink's entrypoint.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        perl -MIO::Socket::INET -MIO::Select -e '
+          $$SIG{CHLD} = "IGNORE";
+          my $$s = IO::Socket::INET->new(LocalAddr=>"127.0.0.1", LocalPort=>6124, Proto=>"tcp", Listen=>64, ReuseAddr=>1) or die $$!;
+          while (my $$c = $$s->accept) {
+            next if fork();
+            close $$s;
+            my $$u = IO::Socket::INET->new(PeerAddr=>"172.28.0.14", PeerPort=>6124, Proto=>"tcp") or exit 1;
+            my $$sel = IO::Select->new($$c, $$u);
+            my %p = (fileno($$c)=>$$u, fileno($$u)=>$$c);
+            while (my @r = $$sel->can_read) {
+              for my $$fh (@r) {
+                my $$n = sysread($$fh, my $$b, 65536);
+                my $$d = $$p{fileno($$fh)};
+                if ($$n) {
+                  my $$o = 0;
+                  while ($$o < $$n) { my $$w = syswrite($$d, $$b, $$n-$$o, $$o); exit 0 unless defined $$w; $$o += $$w; }
+                } else {
+                  $$sel->remove($$fh); shutdown($$d, 1); exit 0 unless $$sel->count;
+                }
+              }
+            }
+            exit 0;
+          }
+        ' &
+        exec /docker-entrypoint.sh "$$@"
+      - --
+    environment:
+      JAVA_TOOL_OPTIONS: -Dorg.apache.fluss.shaded.netty4.io.netty.transport.noNative=true -Dio.netty.transport.noNative=true
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.bind-host: 172.28.0.14
+        rest.address: flink-jobmanager
+        rest.bind-address: 172.28.0.14
+        jobmanager.memory.process.size: 768m
+        parallelism.default: 1
+        state.checkpoints.dir: file:///flink-checkpoints
+        restart-strategy.type: none
+        jobstore.expiration-time: 86400
+        web.refresh-interval: 200
+    extra_hosts: *default-hosts
+    networks:
+      default:
+        ipv4_address: 172.28.0.14
+
+  flink-taskmanager:
+    hostname: flink-taskmanager
+    environment:
+      JAVA_TOOL_OPTIONS: -Dorg.apache.fluss.shaded.netty4.io.netty.transport.noNative=true -Dio.netty.transport.noNative=true
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.host: flink-taskmanager
+        taskmanager.bind-host: 172.28.0.15
+        taskmanager.network.netty.transport: nio
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 1152m
+        state.checkpoints.dir: file:///flink-checkpoints
+    extra_hosts: *default-hosts
+    networks:
+      default:
+        ipv4_address: 172.28.0.15
+
+  flink-sql-gateway:
+    hostname: flink-sql-gateway
+    command:
+      - start-foreground
+      - -Dsql-gateway.endpoint.rest.address=172.28.0.16
+      - -Dsql-gateway.endpoint.rest.bind-address=172.28.0.16
+      - -Dsql-gateway.endpoint.rest.port=8083
+      - -Dsql-gateway.session.idle-timeout=10min
+      - -Dexecution.target=remote
+      - -Drest.address=flink-jobmanager
+      - -Drest.port=8081
+      - -Djobmanager.rpc.address=flink-jobmanager
+    environment:
+      JVM_ARGS: -Xms64m -Xmx256m
+      JAVA_TOOL_OPTIONS: -Dorg.apache.fluss.shaded.netty4.io.netty.transport.noNative=true -Dio.netty.transport.noNative=true
+    extra_hosts: *default-hosts
+    networks:
+      default:
+        ipv4_address: 172.28.0.16
+
+  bootstrap:
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx256m -Dorg.apache.fluss.shaded.netty4.io.netty.transport.noNative=true -Dio.netty.transport.noNative=true
+    extra_hosts: *default-hosts
+
+  demo-app:
+    hostname: demo-app
+    ports: !reset []
+    environment:
+      JAVA_TOOL_OPTIONS: -Xms64m -Xmx384m -XX:+ExitOnOutOfMemoryError -Dorg.apache.fluss.shaded.netty4.io.netty.transport.noNative=true -Dio.netty.transport.noNative=true
+    extra_hosts:
+      - "kafka:172.28.0.10"
+      - "zookeeper:172.28.0.11"
+      - "fluss-coordinator:172.28.0.12"
+      - "fluss-tablet:172.28.0.13"
+      - "flink-jobmanager:172.28.0.14"
+      - "flink-taskmanager:172.28.0.15"
+      - "flink-sql-gateway:172.28.0.16"
+      - "demo-app:172.28.0.17"
+      - "python-runner:172.29.0.19"
+    networks:
+      default:
+        ipv4_address: 172.28.0.17
+      python-exec:
+        ipv4_address: 172.29.0.17
+
+  python-runner:
+    hostname: python-runner
+    mem_limit: 384m
+    environment:
+      FLUSS_BOOTSTRAP_SERVERS: fluss-coordinator:9124
+    entrypoint:
+      - python
+      - -I
+      - -B
+      - -c
+      - |
+        import sys
+        sys.path.insert(0, "/opt/runner")
+        import runner
+        print("python-runner listening on 172.29.0.19:8000 (pyfluss %s)" % runner._pyfluss_version(), flush=True)
+        runner.ThreadingHTTPServer(("172.29.0.19", 8000), runner.Handler).serve_forever()
+    extra_hosts: *python-exec-hosts
+    networks:
+      python-exec:
+        ipv4_address: 172.29.0.19
+
+  e2e:
+    environment:
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError -Dorg.apache.fluss.shaded.netty4.io.netty.transport.noNative=true -Dio.netty.transport.noNative=true
+    extra_hosts: *default-hosts
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+  python-exec:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
