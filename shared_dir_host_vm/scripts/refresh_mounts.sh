@@ -10,20 +10,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# 1. Load Environment
-ENV_FILE="${REPO_ROOT}/.env.host"
-[[ -f "$ENV_FILE" ]] || ENV_FILE="${REPO_ROOT}/.env"
-
-if [[ -f "$ENV_FILE" ]]; then
-    # shellcheck source=/dev/null
-    set -a; source "$ENV_FILE"; set +a
-fi
-
-VM_NAME="${VM_NAME:-krun-agent-persistent}"
-MAPPED_DIR_FILE="${MAPPED_DIR_FILE:-${REPO_ROOT}/.env.mapped_dir}"
+# 1. Load Environment (SSOT via scripts/load_config.sh)
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/load_config.sh" "$@"
+set -- "${_CLEANED_ARGS[@]}"
 KRUNVM_BIN="${KRUNVM_BIN:-$(command -v krunvm 2>/dev/null || echo "${HOME}/.local/bin/krunvm")}"
+
+# Sync .env.mapped_dir into shared_dir_host_vm so the microVM always has access to the latest mappings
+if [[ -n "${MAPPED_DIR_FILE:-}" && -f "$MAPPED_DIR_FILE" && -d "${SCRIPT_DIR}/.." ]]; then
+    cp -f "$MAPPED_DIR_FILE" "${SCRIPT_DIR}/../.env.mapped_dir" 2>/dev/null || true
+fi
 
 if [[ ! -x "$KRUNVM_BIN" ]]; then
     echo "[ERROR] 'krunvm' executable not found at '$KRUNVM_BIN'." >&2
@@ -175,8 +172,18 @@ fi
 # 4. Apply Configuration Updates In-Place via changevm
 echo ""
 echo "==> Updating microVM configuration via 'krunvm changevm'..."
+"$KRUNVM_BIN" changevm "$VM_NAME" --remove-volumes >/dev/null 2>&1 || true
+
+CHANGEVM_ARGS=("--workdir" "$PRIMARY_VM_DIR")
+if [[ -n "${VM_CPUS:-}" ]]; then
+    CHANGEVM_ARGS+=("--cpus" "$VM_CPUS")
+fi
+if [[ -n "${VM_MEMORY:-}" ]]; then
+    CHANGEVM_ARGS+=("--mem" "$VM_MEMORY")
+fi
+
 "$KRUNVM_BIN" changevm "$VM_NAME" \
-    --workdir "$PRIMARY_VM_DIR" \
+    "${CHANGEVM_ARGS[@]}" \
     "${MOUNT_FLAGS[@]}" >/dev/null
 
 echo "=========================================================================="

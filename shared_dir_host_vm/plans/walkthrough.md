@@ -27,7 +27,7 @@
 
 ### Host PC Scripts (`/shared_dir_host_vm/vm2host/`)
 - **[setup_host_vscode_ssh.sh](file:///shared_dir_host_vm/vm2host/setup_host_vscode_ssh.sh)**:
-  - Heavily commented Host PC script that exports `~/.ssh/id_ed25519.pub`, updates `Host krun-act-runner` in `/home/vin/.ssh/config`, configures `/home/vin/.config/Code/User/settings.json`, and cleans up stale SSH forwarding processes.
+  - Heavily commented Host PC script that exports `~/.ssh/id_ed25519.pub`, updates `Host krun-act-runner` in `~/.ssh/config`, configures `~/.config/Code/User/settings.json`, and cleans up stale SSH forwarding processes.
 - **[test_host_to_vm_ssh.sh](file:///shared_dir_host_vm/vm2host/test_host_to_vm_ssh.sh)**:
   - Heavily commented Host PC diagnostic script that runs 5 end-to-end tests (TCP banner, passwordless SSH auth, PTY allocation, SSH `-L` TCP port forwarding to a `port=0` VM listener, and SSH Unix domain socket forwarding) and supports `--launch` to open VS Code directly.
   - Test 4 and Test 5 daemonize their Python test listeners (`os.setsid()` and standard fd redirection to `/dev/null`) so the remote SSH command returns immediately to the Host PC without waiting for the listener socket timeout.
@@ -57,8 +57,8 @@ On your **Host PC**, run:
 
 ```bash
 # 1. Configure ~/.ssh/config, export pubkey, and configure VS Code settings.json
-/home/vin/ws/github/VincentChong123/krunvm/shared_dir_host_vm/vm2host/setup_host_vscode_ssh.sh
+./shared_dir_host_vm/vm2host/setup_host_vscode_ssh.sh
 
 # 2. Run all 5 end-to-end SSH & port-forwarding tests (and launch VS Code)
-/home/vin/ws/github/VincentChong123/krunvm/shared_dir_host_vm/vm2host/test_host_to_vm_ssh.sh --launch
+./shared_dir_host_vm/vm2host/test_host_to_vm_ssh.sh --launch
 ```

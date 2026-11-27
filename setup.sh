@@ -25,26 +25,18 @@ for arg in "$@"; do
 done
 
 # ------------------------------------------------------------------------------
-# 1. Environment & Configuration Loading (.env.host / .env)
+# 1. Environment & Configuration Loading (SSOT via scripts/load_config.sh)
 # ------------------------------------------------------------------------------
-if [[ -z "${ENV_FILE:-}" ]]; then
-    if [[ -f "${SCRIPT_DIR}/.env.host" ]]; then
-        ENV_FILE="${SCRIPT_DIR}/.env.host"
-    else
-        ENV_FILE="${SCRIPT_DIR}/.env"
-    fi
-fi
-
-if [[ ! -f "$ENV_FILE" ]]; then
-    echo "[ERROR] Configuration file '$ENV_FILE' not found. Please copy .env.example to .env." >&2
+# shellcheck source=/dev/null
+if [[ -f "${SCRIPT_DIR}/scripts/load_config.sh" ]]; then
+    source "${SCRIPT_DIR}/scripts/load_config.sh" "$@"
+elif [[ -f "${SCRIPT_DIR}/shared_dir_host_vm/scripts/load_config.sh" ]]; then
+    source "${SCRIPT_DIR}/shared_dir_host_vm/scripts/load_config.sh" "$@"
+else
+    echo "[ERROR] load_config.sh not found." >&2
     exit 1
 fi
-
-echo "==> Loading configuration from $ENV_FILE..."
-# shellcheck source=/dev/null
-set -a
-source "$ENV_FILE"
-set +a
+set -- "${_CLEANED_ARGS[@]}"
 
 # Support running under dedicated sandbox user configured in .env.host
 if [[ -n "${SANDBOX_HOST_USER:-}" ]] && [[ "$(id -un)" != "$SANDBOX_HOST_USER" ]]; then
@@ -264,11 +256,13 @@ if echo "$VM_LIST" | grep -q "^${VM_NAME}[[:space:]]*$"; then
         "$KRUNVM_BIN" delete "$VM_NAME" >/dev/null 2>&1 || true
     else
         echo "==> Persistent sandbox '$VM_NAME' already exists in krunvm."
-        echo "==> Refreshing directory mappings via 'krunvm changevm'..."
+        echo "==> Refreshing directory mappings and resource sizing via 'krunvm changevm'..."
         "$KRUNVM_BIN" changevm "$VM_NAME" \
+            --cpus "$VM_CPUS" \
+            --mem "$VM_MEMORY" \
             --workdir "$PRIMARY_VM_DIR" \
             "${MOUNT_FLAGS[@]}" >/dev/null
-        echo "==> Volume mappings updated and refreshed successfully without data loss."
+        echo "==> Configuration and volume mappings updated successfully without data loss."
     fi
 fi
 
@@ -277,12 +271,12 @@ VM_LIST="$("$KRUNVM_BIN" list 2>/dev/null || true)"
 if ! echo "$VM_LIST" | grep -q "^${VM_NAME}[[:space:]]*$"; then
     echo "==> Creating persistent sandbox '$VM_NAME'..."
     "$KRUNVM_BIN" create \
+        "$OCI_BASE_IMAGE" \
         --name "$VM_NAME" \
         --cpus "$VM_CPUS" \
         --mem "$VM_MEMORY" \
         --workdir "$PRIMARY_VM_DIR" \
-        "${MOUNT_FLAGS[@]}" \
-        "$OCI_BASE_IMAGE"
+        "${MOUNT_FLAGS[@]}"
 
     echo "==> Persistent sandbox '$VM_NAME' created successfully."
 

@@ -33,7 +33,7 @@ repos:
       - id: prevent-local-paths
         # name: Prevent leaking absolute paths (/home, /mnt)
         name: Prevent leaking absolute paths (/home)
-        entry: (?:(?<=[ \t"'=])|^)(/home/(?!(?:ubuntu|sandbox-runner)\b)[a-zA-Z0-9_.-]+)
+        entry: (?:(?<=[ \t"'`(:=])|^)(/home/(?!(?:ubuntu|sandbox-runner)\b)[a-zA-Z0-9_.-]+)
         # entry: (?:(?<=[ \t"'=])|^)(/home/[a-zA-Z0-9_.-]+|/mnt/[a-zA-Z0-9_.-]+)
         language: pygrep
         types: [text]

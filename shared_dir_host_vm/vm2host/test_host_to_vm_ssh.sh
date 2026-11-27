@@ -3,7 +3,7 @@
 # test_host_to_vm_ssh.sh - End-to-End Host PC -> krunvm VS Code SSH Verifier
 #
 # LOCATION ON HOST PC:
-#   /home/vin/ws/github/VincentChong123/krunvm/shared_dir_host_vm/vm2host/test_host_to_vm_ssh.sh
+#   shared_dir_host_vm/vm2host/test_host_to_vm_ssh.sh
 #
 # USAGE ON HOST PC:
 #   ./test_host_to_vm_ssh.sh           # Run all 5 end-to-end SSH & VS Code checks
@@ -39,7 +39,7 @@ echo "=================================================================="
 # Safety check: Ensure this is run on the Host PC, not inside the krunvm VM
 if [ -f /init.krun ] || grep -q "tsi_hijack" /proc/cmdline 2>/dev/null; then
     echo "[ERROR] Detected krunvm guest environment. Run this script on the Host PC:" >&2
-    echo "        /home/vin/ws/github/VincentChong123/krunvm/shared_dir_host_vm/vm2host/test_host_to_vm_ssh.sh" >&2
+    echo "        ./shared_dir_host_vm/vm2host/test_host_to_vm_ssh.sh" >&2
     exit 1
 fi
 
