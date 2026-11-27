@@ -3,7 +3,7 @@
 # run_sandbox.sh - Fast interactive launcher for the Persistent krunvm Sandbox
 # Single Source of Truth for launching microVM sessions.
 # Supports hierarchical config loading (.env / .env.act / .env.host),
-# clear config override logging, and execution modes (shell, act, exec).
+# clear config override logging, and execution modes (shell, nektos_act, exec).
 # ==============================================================================
 
 set -euo pipefail
@@ -65,24 +65,46 @@ if ! "$KRUNVM_EXEC" list 2>/dev/null | grep -q "^${VM_NAME}[[:space:]]*$"; then
     exit 1
 fi
 
-# Determine execution mode
-MODE="${1:-}"
+# Warn if any krunvm VM is already running (prevents accidental multi-VM host OOM)
+if [[ -x "${SCRIPT_DIR}/scripts/list_vms.sh" ]]; then
+    EXISTING_VMS="$("${SCRIPT_DIR}/scripts/list_vms.sh" --count 2>/dev/null || echo 0)"
+    if [[ "${EXISTING_VMS:-0}" -gt 0 ]]; then
+        echo "" >&2
+        echo "[WARNING] ${EXISTING_VMS} krunvm VM(s) already running! Running multiple VMs may exhaust host RAM." >&2
+        "${SCRIPT_DIR}/scripts/list_vms.sh" --running >&2
+        echo "" >&2
+        if [[ -t 0 && "${FORCE_START:-false}" != "true" ]]; then
+            read -r -p "Continue launching another VM ('$VM_NAME')? [y/N] " _reply
+            if [[ ! "$_reply" =~ ^[Yy]$ ]]; then
+                echo "==> Aborted." >&2
+                exit 1
+            fi
+        fi
+    fi
+fi
+
+# Determine execution mode (defaults to daemon when no mode is provided)
+MODE="${1:-daemon}"
+if [[ $# -gt 0 ]] && [[ "$MODE" == "shell" || "$MODE" == "daemon" || "$MODE" == "nektos_act" || "$MODE" == "exec" ]]; then
+    shift
+fi
 
 if [[ "$MODE" == "shell" ]]; then
-    shift
     echo "==> Opening interactive shell in microVM '$VM_NAME'..."
-    exec "$KRUNVM_EXEC" start "$VM_NAME" /usr/bin/env TERM="${TERM:-xterm-256color}" COLORTERM="${COLORTERM:-truecolor}" /bin/bash --login -i "$@"
+    exec "$KRUNVM_EXEC" start "$VM_NAME" /usr/bin/env -- TERM="${TERM:-xterm-256color}" COLORTERM="${COLORTERM:-truecolor}" /bin/bash --login -i "$@"
 elif [[ "$MODE" == "daemon" ]]; then
-    shift
+    LOG_DIR="${SCRIPT_DIR}/logs"
+    mkdir -p "$LOG_DIR"
+    LOG_FILE="${LOG_DIR}/$(date +%Y-%m-%d-%H-%M-%S).log"
     echo "==> Starting microVM '$VM_NAME' in headless daemon mode (SSH / VS Code)..."
-    exec "$KRUNVM_EXEC" start "$VM_NAME" /shared_dir_host_vm/scripts/start_daemon.sh "$@"
-elif [[ "$MODE" == "act" ]]; then
-    shift
-    echo "==> Executing GitHub Actions (act) runner inside microVM '$VM_NAME'..."
-    VM_COMMAND='command -v ensure-dockerd.sh >/dev/null 2>&1 && sudo ensure-dockerd.sh || ( pgrep -x dockerd >/dev/null 2>&1 || ( [ -f /etc/docker/daemon.json ] && grep -q overlay2 /etc/docker/daemon.json || sudo sh -c "echo '\''{\"iptables\":false,\"ip6tables\":false,\"storage-driver\":\"overlay2\"}'\'' > /etc/docker/daemon.json" && sudo dockerd >/var/log/dockerd.log 2>&1 & sleep 2 ) ); cd /workspace && exec act workflow_dispatch -W /workspace/.github/workflows/ci.yml -P ubuntu-latest=-self-hosted --env ACT=true "$@"'
-    exec "$KRUNVM_EXEC" start "$VM_NAME" /bin/bash -- -c "$VM_COMMAND" bash "$@"
+    echo "==> Logging to: $LOG_FILE"
+    nohup "$KRUNVM_EXEC" start "$VM_NAME" /shared_dir_host_vm/scripts/start_daemon.sh "$@" >"$LOG_FILE" 2>&1 </dev/null &
+    DAEMON_PID=$!
+    disown "$DAEMON_PID" 2>/dev/null || true
+    echo "==> Daemon started (PID: $DAEMON_PID). Press Ctrl+C or close terminal to detach; VM stays running."
+    exec tail -f "$LOG_FILE"
+
 elif [[ "$MODE" == "exec" ]]; then
-    shift
     echo "==> Executing command in microVM '$VM_NAME': $*"
     exec "$KRUNVM_EXEC" start "$VM_NAME" /bin/bash -- -c "$*"
 else
@@ -92,6 +114,6 @@ else
         exec "$KRUNVM_EXEC" start "$VM_NAME" /bin/bash -- /krunvm/scripts/guest_dispatch.sh "$@"
     else
         echo "==> Starting microVM '$VM_NAME' interactive shell..."
-        exec "$KRUNVM_EXEC" start "$VM_NAME" /usr/bin/env TERM="${TERM:-xterm-256color}" COLORTERM="${COLORTERM:-truecolor}" /bin/bash --login -i "$@"
+        exec "$KRUNVM_EXEC" start "$VM_NAME" /usr/bin/env -- TERM="${TERM:-xterm-256color}" COLORTERM="${COLORTERM:-truecolor}" /bin/bash --login -i "$@"
     fi
 fi
